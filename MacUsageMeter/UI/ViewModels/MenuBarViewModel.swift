@@ -110,31 +110,36 @@ final class MenuBarViewModel: ObservableObject {
     func updateStatusItem(_ statusItem: NSStatusItem) {
         guard let button = statusItem.button else { return }
 
-        let iconSize = NSSize(width: 18, height: 18)
-        let bolt = Self.makeIcon(systemName: "bolt.fill", size: iconSize)
-        let warn = Self.makeIcon(systemName: "exclamationmark.triangle.fill", size: iconSize)
-
         switch displayState {
         case .normal(let watts, let wifiText):
             let wattsStr = String(format: "%.1fW", watts)
-            button.image = bolt
-            button.title = bolt == nil ? "⚡ \(wattsStr) / \(wifiText)" : " \(wattsStr) / \(wifiText)"
+            updateButton(button, image: Self.boltIcon, title: Self.boltIcon == nil ? "⚡ \(wattsStr) / \(wifiText)" : " \(wattsStr) / \(wifiText)")
 
         case .missing:
-            button.image = warn
-            button.title = warn == nil ? "⚠ 未測定" : " 未測定"
+            updateButton(button, image: Self.warnIcon, title: Self.warnIcon == nil ? "⚠ 未測定" : " 未測定")
 
         case .error:
-            button.image = warn
-            button.title = warn == nil ? "⚠ 要確認" : " 要確認"
+            updateButton(button, image: Self.warnIcon, title: Self.warnIcon == nil ? "⚠ 要確認" : " 要確認")
 
         case .compact:
-            button.image = bolt
-            button.title = bolt == nil ? "⚡" : ""
+            updateButton(button, image: Self.boltIcon, title: Self.boltIcon == nil ? "⚡" : "")
         }
 
         button.toolTip = tooltipText
     }
+
+    private func updateButton(_ button: NSStatusBarButton, image: NSImage?, title: String) {
+        if button.image !== image {
+            button.image = image
+        }
+        if button.title != title {
+            button.title = title
+        }
+    }
+
+    private static let iconSize = NSSize(width: 18, height: 18)
+    private static let boltIcon = makeIcon(systemName: "bolt.fill", size: iconSize)
+    private static let warnIcon = makeIcon(systemName: "exclamationmark.triangle.fill", size: iconSize)
 
     /// SF Symbol アイコンを指定サイズのテンプレート画像として返す
     private static func makeIcon(systemName: String, size: NSSize) -> NSImage? {

@@ -4,6 +4,14 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
+func resolveSavePanelWindow(
+    presentingWindow: NSWindow?,
+    keyWindow: NSWindow?,
+    mainWindow: NSWindow?
+) -> NSWindow? {
+    presentingWindow ?? keyWindow ?? mainWindow
+}
+
 /// 詳細画面の ViewModel (G-003)
 ///
 /// 期間別の履歴データ取得、グラフ用データ変換、CSV エクスポートを担当する。
@@ -51,11 +59,16 @@ final class DetailViewModel: ObservableObject {
     // MARK: - Dependencies
 
     private let databaseManager: DatabaseManager
+    private let presentingWindowProvider: () -> NSWindow?
 
     // MARK: - Initialization
 
-    init(databaseManager: DatabaseManager) {
+    init(
+        databaseManager: DatabaseManager,
+        presentingWindowProvider: @escaping () -> NSWindow? = { nil }
+    ) {
         self.databaseManager = databaseManager
+        self.presentingWindowProvider = presentingWindowProvider
     }
 
     // MARK: - Data Loading
@@ -141,17 +154,36 @@ final class DetailViewModel: ObservableObject {
 
     /// CSV エクスポートを実行する
     func exportCSV() {
+        Self.requestStatusItemRefresh()
+
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.commaSeparatedText]
         panel.nameFieldStringValue = "\(exportType.rawValue)_export.csv"
+        let parentWindow = exportParentWindow()
 
-        panel.begin { [weak self] response in
-            guard let self = self, response == .OK, let url = panel.url else { return }
+        let handleResponse: (NSApplication.ModalResponse) -> Void = { [weak self, weak parentWindow, panel] response in
+            Self.requestStatusItemRefresh()
+            parentWindow?.makeKeyAndOrderFront(nil)
+            guard let self, response == .OK, let url = panel.url else { return }
             Task { @MainActor in
                 self.isExporting = true
                 self.exportResultMessage = nil
                 await self.performExport(to: url)
+                Self.requestStatusItemRefresh()
             }
+        }
+
+        if let parentWindow {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            parentWindow.makeKeyAndOrderFront(nil)
+            panel.beginSheetModal(for: parentWindow, completionHandler: handleResponse)
+        } else {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            panel.begin(completionHandler: handleResponse)
+        }
+
+        DispatchQueue.main.async {
+            Self.requestStatusItemRefresh()
         }
     }
 
@@ -193,5 +225,17 @@ final class DetailViewModel: ObservableObject {
             exportResultMessage = "エクスポートに失敗しました: \(error.localizedDescription)"
         }
         isExporting = false
+    }
+
+    private func exportParentWindow() -> NSWindow? {
+        resolveSavePanelWindow(
+            presentingWindow: presentingWindowProvider(),
+            keyWindow: NSApplication.shared.keyWindow,
+            mainWindow: NSApplication.shared.mainWindow
+        )
+    }
+
+    private static func requestStatusItemRefresh() {
+        NotificationCenter.default.post(name: .macUsageMeterStatusItemNeedsRefresh, object: nil)
     }
 }

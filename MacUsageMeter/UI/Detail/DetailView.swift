@@ -260,19 +260,29 @@ struct DetailView: View {
                 .font(.headline)
                 .padding(.horizontal)
 
-            Form {
-                // 種別選択
-                Picker("出力種別", selection: $viewModel.exportType) {
-                    Text("電力サンプル (raw)").tag(CSVExporter.ExportType.rawPower)
-                    Text("Wi-Fi サンプル (raw)").tag(CSVExporter.ExportType.rawWifi)
-                    Text("日次ロールアップ").tag(CSVExporter.ExportType.dailyRollup)
+            VStack(alignment: .leading, spacing: 14) {
+                exportField(label: "出力種別") {
+                    Picker("出力種別", selection: $viewModel.exportType) {
+                        Text("電力サンプル (raw)").tag(CSVExporter.ExportType.rawPower)
+                        Text("Wi-Fi サンプル (raw)").tag(CSVExporter.ExportType.rawWifi)
+                        Text("日次ロールアップ").tag(CSVExporter.ExportType.dailyRollup)
+                    }
+                    .labelsHidden()
+                    .frame(width: 240, alignment: .leading)
                 }
 
-                // 日付範囲
-                DatePicker("開始日", selection: $viewModel.exportDateFrom, displayedComponents: .date)
-                DatePicker("終了日", selection: $viewModel.exportDateTo, displayedComponents: .date)
+                exportField(label: "開始日") {
+                    DatePicker("開始日", selection: $viewModel.exportDateFrom, displayedComponents: .date)
+                        .labelsHidden()
+                        .frame(width: 180, alignment: .leading)
+                }
 
-                // 出力ボタン
+                exportField(label: "終了日") {
+                    DatePicker("終了日", selection: $viewModel.exportDateTo, displayedComponents: .date)
+                        .labelsHidden()
+                        .frame(width: 180, alignment: .leading)
+                }
+
                 HStack {
                     Spacer()
                     Button(action: { viewModel.exportCSV() }) {
@@ -281,10 +291,11 @@ struct DetailView: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(viewModel.isExporting)
                     .accessibilityLabel("CSVファイルに書き出す")
+                    .accessibilityIdentifier("csvExportButton")
                     Spacer()
                 }
+                .padding(.top, 8)
 
-                // 結果表示
                 if let message = viewModel.exportResultMessage {
                     HStack {
                         if message.contains("完了") {
@@ -297,9 +308,10 @@ struct DetailView: View {
                         Text(message)
                             .font(.subheadline)
                     }
+                    .frame(maxWidth: .infinity, alignment: .center)
                 }
             }
-            .formStyle(.grouped)
+            .padding(.horizontal)
 
             Spacer()
 
@@ -308,6 +320,16 @@ struct DetailView: View {
                 .foregroundColor(.secondary)
                 .padding(.horizontal)
                 .padding(.bottom, 8)
+        }
+    }
+
+    private func exportField<Content: View>(label: String, @ViewBuilder content: () -> Content) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(label)
+                .foregroundColor(.secondary)
+                .frame(width: 72, alignment: .leading)
+            content()
+            Spacer()
         }
     }
 

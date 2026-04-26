@@ -2,6 +2,10 @@ import SwiftUI
 import AppKit
 import Combine
 
+extension Notification.Name {
+    static let macUsageMeterStatusItemNeedsRefresh = Notification.Name("macUsageMeterStatusItemNeedsRefresh")
+}
+
 /// Mac Usage Meter - メニューバー常駐アプリのエントリポイント
 ///
 /// 純粋な NSApplication + AppDelegate ベースで起動する。
@@ -99,6 +103,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 4. メニューバーをセットアップ
         setupStatusItem()
         setupPopover()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(statusItemNeedsRefresh(_:)),
+            name: .macUsageMeterStatusItemNeedsRefresh,
+            object: nil
+        )
 
         // 5. ライフサイクル監視
         lifecycleObserver = LifecycleObserver()
@@ -126,6 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        NotificationCenter.default.removeObserver(self, name: .macUsageMeterStatusItemNeedsRefresh, object: nil)
         menuBarViewModel?.stopUpdating()
         popoverViewModel?.stopUpdating()
         lifecycleObserver?.stopObserving()
@@ -134,10 +145,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Status Item
 
     private func setupStatusItem() {
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem = item
-        item.isVisible = true
+        let item: NSStatusItem
+        if let existingItem = statusItem {
+            item = existingItem
+            item.length = NSStatusItem.variableLength
+        } else {
+            item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+            statusItem = item
+        }
 
+        item.isVisible = true
+        configureStatusItem(item)
+    }
+
+    private func configureStatusItem(_ item: NSStatusItem) {
         guard let button = item.button else { return }
 
         if let img = NSImage(systemSymbolName: "bolt.fill", accessibilityDescription: "Mac Usage Meter") {
@@ -150,6 +171,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.target = self
         button.toolTip = "Mac Usage Meter"
         button.setAccessibilityIdentifier("statusBarButton")
+    }
+
+    @objc private func statusItemNeedsRefresh(_ notification: Notification) {
+        ensureStatusItemVisible()
+    }
+
+    private func ensureStatusItemVisible() {
+        if statusItem?.button == nil {
+            statusItem = nil
+            setupStatusItem()
+        }
+
+        guard let item = statusItem else {
+            setupStatusItem()
+            return
+        }
+
+        item.isVisible = true
+        menuBarViewModel?.updateStatusItem(item)
     }
 
     private func setupPopover() {
@@ -198,9 +238,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let vm = menuBarViewModel, let item = statusItem else { return }
         vm.$displayState
             .receive(on: RunLoop.main)
-            .sink { [weak vm, weak item] _ in
-                guard let vm = vm, let item = item else { return }
-                vm.updateStatusItem(item)
+            .sink { [weak self] _ in
+                guard let self = self else { return }
+                self.ensureStatusItemVisible()
             }
             .store(in: &cancellables)
         // 初回反映
@@ -266,9 +306,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let db = databaseManager else { return }
         popover?.performClose(nil)
 
-        let view = DetailView(viewModel: DetailViewModel(databaseManager: db))
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 700, height: 550),
                               styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
+        let viewModel = DetailViewModel(
+            databaseManager: db,
+            presentingWindowProvider: { [weak window] in window }
+        )
+        let view = DetailView(viewModel: viewModel)
         window.title = "Mac Usage Meter - 詳細"
         window.contentView = NSHostingView(rootView: view)
         window.center()
