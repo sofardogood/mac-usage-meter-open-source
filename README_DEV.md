@@ -106,7 +106,8 @@ Scripts/dev-run.sh --oneshot
 - Wi-Fi 通信量の計測は `getifaddrs()` を使用するため root 不要
 - CollectorController は `notReady` 状態で起動し、Wi-Fi タイマーのみ動作
 - 電力データは取得できないが、UI の確認や Wi-Fi 関連の開発は可能
-- `Scripts/dev-run.sh` は `~/Library/LaunchAgents/com.macusagemeter.app.keepalive.plist` を登録し、アプリが終了しても launchd が再起動する
+- `Scripts/dev-run.sh` はアプリ本体を `~/Applications/MacUsageMeter.app` に配置し、`~/Library/LaunchAgents/com.macusagemeter.app.keepalive.plist` を登録する
+- LaunchAgent は `~/Applications/MacUsageMeter.app` を直接起動するため、VS Code を閉じたり、このプロジェクトフォルダを削除しても常駐を継続できる
 
 ---
 

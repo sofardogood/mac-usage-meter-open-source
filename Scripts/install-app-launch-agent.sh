@@ -6,7 +6,7 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 LABEL="${LABEL:-com.macusagemeter.app.keepalive}"
 DOMAIN="gui/$(id -u)"
-APP_BUNDLE="${APP_BUNDLE:-${PROJECT_ROOT}/build/MacUsageMeter.app}"
+APP_BUNDLE="${APP_BUNDLE:-${HOME}/Applications/MacUsageMeter.app}"
 APP_BINARY="${APP_BUNDLE}/Contents/MacOS/MacUsageMeter"
 PLIST_PATH="${HOME}/Library/LaunchAgents/${LABEL}.plist"
 LOG_DIR="${HOME}/Library/Logs/MacUsageMeter"
@@ -22,6 +22,8 @@ Usage:
   Scripts/install-app-launch-agent.sh --status
 
 Installs MacUsageMeter as a user LaunchAgent with KeepAlive=true.
+The app bundle is installed to ~/Applications by default, so it keeps working
+after VS Code is closed or this project folder is removed.
 USAGE
 }
 
@@ -119,10 +121,9 @@ build_app_bundle() {
 write_launch_agent_plist() {
     mkdir -p "$(dirname "${PLIST_PATH}")" "${LOG_DIR}"
 
-    local escaped_label escaped_binary escaped_project escaped_stdout escaped_stderr
+    local escaped_label escaped_binary escaped_stdout escaped_stderr
     escaped_label="$(printf '%s' "${LABEL}" | xml_escape)"
     escaped_binary="$(printf '%s' "${APP_BINARY}" | xml_escape)"
-    escaped_project="$(printf '%s' "${PROJECT_ROOT}" | xml_escape)"
     escaped_stdout="$(printf '%s' "${LOG_DIR}/launchd.out.log" | xml_escape)"
     escaped_stderr="$(printf '%s' "${LOG_DIR}/launchd.err.log" | xml_escape)"
 
@@ -137,8 +138,6 @@ write_launch_agent_plist() {
     <array>
         <string>${escaped_binary}</string>
     </array>
-    <key>WorkingDirectory</key>
-    <string>${escaped_project}</string>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
@@ -167,6 +166,7 @@ bootout_agent() {
 stop_running_app() {
     pkill -f "${APP_BINARY}" >/dev/null 2>&1 || true
     pkill -f "MacUsageMeter.app/Contents/MacOS/MacUsageMeter" >/dev/null 2>&1 || true
+    pkill -x "MacUsageMeter" >/dev/null 2>&1 || true
 }
 
 install_agent() {
@@ -195,6 +195,8 @@ install_agent() {
     launchctl print "${DOMAIN}/${LABEL}" | sed -n '1,80p'
     echo ""
     echo "MacUsageMeter is now managed by launchd (${LABEL})."
+    echo "App bundle: ${APP_BUNDLE}"
+    echo "You can close VS Code and remove this project folder after confirming it runs."
 }
 
 uninstall_agent() {
@@ -215,6 +217,9 @@ print_status() {
     if pgrep -f "${APP_BINARY}" >/dev/null 2>&1; then
         echo ""
         pgrep -fl "${APP_BINARY}"
+    elif pgrep -x "MacUsageMeter" >/dev/null 2>&1; then
+        echo ""
+        pgrep -xlf "MacUsageMeter"
     fi
 }
 
