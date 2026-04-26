@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<array>
+    <dict>
+        <key>elapsed_ns</key>
+        <integer>1000000000</integer>
+        <key>hw_model</key>
+        <string>Mac16,7</string>
+        <key>kern_osversion</key>
+        <string>25D771280a</string>
+        <key>timestamp</key>
+        <date>2026-03-19T12:00:00Z</date>
+        <key>is_delta</key>
+        <true/>
+        <key>processor</key>
+        <dict>
+        </dict>
+    </dict>
+</array>
+</plist>

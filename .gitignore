@@ -1,0 +1,31 @@
+# Swift / SPM
+.build/
+.swiftpm/
+Package.resolved
+*.xcodeproj/
+*.xcworkspace/
+
+# Build outputs
+build/
+*.app
+*.dSYM
+*.ips
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+
+# Local environment / secrets
+.env
+.env.*
+!.env.template
+*.key
+*.pem
+credentials*
+
+# Logs
+*.log
+MacBook-Pro-3

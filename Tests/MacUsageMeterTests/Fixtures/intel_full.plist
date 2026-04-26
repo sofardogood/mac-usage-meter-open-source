@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<array>
+    <dict>
+        <key>elapsed_ns</key>
+        <integer>1000000000</integer>
+        <key>hw_model</key>
+        <string>MacBookPro16,1</string>
+        <key>kern_osversion</key>
+        <string>23G93</string>
+        <key>timestamp</key>
+        <date>2026-03-19T12:00:00Z</date>
+        <key>is_delta</key>
+        <true/>
+        <key>processor</key>
+        <dict>
+            <key>package_power</key>
+            <real>35.5</real>
+            <key>packages</key>
+            <array>
+                <dict>
+                    <key>package</key>
+                    <integer>0</integer>
+                    <key>cores_power</key>
+                    <real>28.3</real>
+                    <key>dram_power</key>
+                    <real>4.2</real>
+                    <key>pkg_power</key>
+                    <real>35.5</real>
+                    <key>cores</key>
+                    <array>
+                        <dict>
+                            <key>core</key>
+                            <integer>0</integer>
+                            <key>freq_hz</key>
+                            <integer>2600000000</integer>
+                            <key>idle_residency</key>
+                            <real>0.45</real>
+                            <key>cstate_residency</key>
+                            <dict>
+                                <key>POLL</key>
+                                <real>0.01</real>
+                                <key>C1</key>
+                                <real>0.10</real>
+                                <key>C3</key>
+                                <real>0.05</real>
+                                <key>C6</key>
+                                <real>0.29</real>
+                            </dict>
+                        </dict>
+                        <dict>
+                            <key>core</key>
+                            <integer>1</integer>
+                            <key>freq_hz</key>
+                            <integer>2600000000</integer>
+                            <key>idle_residency</key>
+                            <real>0.52</real>
+                        </dict>
+                    </array>
+                </dict>
+            </array>
+        </dict>
+    </dict>
+</array>
+</plist>

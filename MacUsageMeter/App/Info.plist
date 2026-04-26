@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleName</key>
+    <string>MacUsageMeter</string>
+    <key>CFBundleDisplayName</key>
+    <string>Mac Usage Meter</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.3</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>SMPrivilegedExecutables</key>
+    <dict>
+        <key>com.macusagemeter.helper</key>
+        <string>identifier "com.macusagemeter.helper" and anchor apple generic and certificate leaf[subject.CN] = "Developer ID Application: *"</string>
+    </dict>
+</dict>
+</plist>
