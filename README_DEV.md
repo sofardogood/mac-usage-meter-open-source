@@ -92,15 +92,21 @@ Scripts/run-with-helper.sh
 Helper が不要な場合（UI 開発、Wi-Fi 計測のみの確認など）:
 
 ```bash
-# アプリをそのまま起動
-swift run MacUsageMeter
-# または Xcode から Cmd+R
+# .app をビルドし、ユーザー LaunchAgent の KeepAlive で常駐させる
+Scripts/dev-run.sh
+
+# 一時的に止める（LaunchAgent も解除）
+Scripts/dev-run.sh --kill
+
+# LaunchAgent を使わず一度だけ起動する場合
+Scripts/dev-run.sh --oneshot
 ```
 
 - セットアップウィザードの Step 2 で「スキップして続行」を選択
 - Wi-Fi 通信量の計測は `getifaddrs()` を使用するため root 不要
 - CollectorController は `notReady` 状態で起動し、Wi-Fi タイマーのみ動作
 - 電力データは取得できないが、UI の確認や Wi-Fi 関連の開発は可能
+- `Scripts/dev-run.sh` は `~/Library/LaunchAgents/com.macusagemeter.app.keepalive.plist` を登録し、アプリが終了しても launchd が再起動する
 
 ---
 

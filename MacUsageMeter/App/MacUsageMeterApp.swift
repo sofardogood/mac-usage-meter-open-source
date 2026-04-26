@@ -68,6 +68,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var cancellables = Set<AnyCancellable>()
 
+    /// メニューバー項目が AppKit 側で外れた場合に復元する定期チェック
+    private var statusItemVisibilityTimer: Timer?
+
     // MARK: - NSApplicationDelegate
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -76,6 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             databaseManager = try DatabaseManager()
         } catch {
             setupStatusItem()
+            startStatusItemVisibilityWatchdog()
             statusItem?.button?.title = " 要確認"
             return
         }
@@ -102,6 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 4. メニューバーをセットアップ
         setupStatusItem()
+        startStatusItemVisibilityWatchdog()
         setupPopover()
         NotificationCenter.default.addObserver(
             self,
@@ -140,6 +145,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuBarViewModel?.stopUpdating()
         popoverViewModel?.stopUpdating()
         lifecycleObserver?.stopObserving()
+        stopStatusItemVisibilityWatchdog()
     }
 
     // MARK: - Status Item
@@ -190,6 +196,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         item.isVisible = true
         menuBarViewModel?.updateStatusItem(item)
+    }
+
+    private func startStatusItemVisibilityWatchdog() {
+        guard statusItemVisibilityTimer == nil else { return }
+
+        let timer = Timer(timeInterval: 2.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.ensureStatusItemVisible()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        statusItemVisibilityTimer = timer
+    }
+
+    private func stopStatusItemVisibilityWatchdog() {
+        statusItemVisibilityTimer?.invalidate()
+        statusItemVisibilityTimer = nil
     }
 
     private func setupPopover() {

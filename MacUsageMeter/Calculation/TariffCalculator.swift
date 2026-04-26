@@ -10,7 +10,7 @@ struct TariffCalculator: Sendable {
 
     /// 電力料金を計算する
     func calculatePowerCost(powerKwh: Double, unitPriceYen: Double) -> Double {
-        return powerKwh * unitPriceYen
+        return roundYen(powerKwh * unitPriceYen)
     }
 
     // MARK: - Daily Network Cost
@@ -20,13 +20,13 @@ struct TariffCalculator: Sendable {
         switch settings.model {
         case .fixed:
             let fee = settings.monthlyFeeYen ?? 0.0
-            return daysInMonth > 0 ? fee / Double(daysInMonth) : 0.0
+            return daysInMonth > 0 ? roundYen(fee / Double(daysInMonth)) : 0.0
         case .metered:
             let price = settings.pricePerGbYen ?? 0.0
-            return wifiGb * price
+            return roundYen(wifiGb * price)
         case .cappedMetered:
             let price = settings.pricePerGbYen ?? 0.0
-            return wifiGb * price
+            return roundYen(wifiGb * price)
         }
     }
 
@@ -40,14 +40,14 @@ struct TariffCalculator: Sendable {
     ) -> Double {
         switch settings.model {
         case .fixed:
-            return totalDailyNetworkCost
+            return roundYen(totalDailyNetworkCost)
         case .metered:
             let price = settings.pricePerGbYen ?? 0.0
-            return totalWifiGb * price
+            return roundYen(totalWifiGb * price)
         case .cappedMetered:
             let price = settings.pricePerGbYen ?? 0.0
             let maxFee = settings.maxMonthlyFeeYen ?? Double.greatestFiniteMagnitude
-            return min(totalWifiGb * price, maxFee)
+            return roundYen(min(totalWifiGb * price, maxFee))
         }
     }
 
@@ -55,6 +55,11 @@ struct TariffCalculator: Sendable {
 
     /// 月次合計料金を計算する
     func calculateMonthlyTotalCost(monthlyPowerCostYen: Double, monthlyNetworkCostYen: Double) -> Double {
-        return monthlyPowerCostYen + monthlyNetworkCostYen
+        return roundYen(monthlyPowerCostYen + monthlyNetworkCostYen)
+    }
+
+    /// yen values are stored with one decimal place.
+    private func roundYen(_ value: Double) -> Double {
+        (value * 10).rounded() / 10
     }
 }
