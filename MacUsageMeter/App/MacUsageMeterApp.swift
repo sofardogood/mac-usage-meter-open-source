@@ -327,7 +327,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func showDetailWindow() {
         guard let db = databaseManager else { return }
-        popover?.performClose(nil)
+
+        // 既存ウィンドウがあれば再利用
+        if let existing = detailWindow, existing.isVisible {
+            NSApp.activate(ignoringOtherApps: true)
+            existing.makeKeyAndOrderFront(nil)
+            popover?.performClose(nil)
+            return
+        }
 
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 700, height: 550),
                               styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
@@ -339,9 +346,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.title = "Mac Usage Meter - 詳細"
         window.contentView = NSHostingView(rootView: view)
         window.center()
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
         detailWindow = window
+
+        // ウィンドウを表示・アクティブにしてからポップオーバーを閉じる
+        // (先にポップオーバーを閉じるとアクセサリアプリのアクティベーションが失われ、
+        //  ウィンドウが前面に出ない問題が発生する)
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        popover?.performClose(nil)
     }
 
     func showErrorStateWindow(stateCode: StateCode) {
@@ -375,7 +387,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showSettingsWindow() {
         guard let vm = settingsViewModel else { return }
-        popover?.performClose(nil)
+
+        // 既存ウィンドウがあれば再利用
+        if let existing = settingsWindow, existing.isVisible {
+            NSApp.activate(ignoringOtherApps: true)
+            existing.makeKeyAndOrderFront(nil)
+            popover?.performClose(nil)
+            return
+        }
 
         let view = SettingsView(viewModel: vm)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 500),
@@ -383,8 +402,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.title = "Mac Usage Meter - 設定"
         window.contentView = NSHostingView(rootView: view)
         window.center()
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
         settingsWindow = window
+
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        popover?.performClose(nil)
     }
 }
