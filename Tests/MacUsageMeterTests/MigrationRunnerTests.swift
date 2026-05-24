@@ -180,6 +180,29 @@ final class MigrationRunnerTests: XCTestCase {
         XCTAssertTrue(tables.contains("preserved_data"))
     }
 
+
+    /// 開いた DB ハンドルを保持したまま backup API で復旧できること
+    func test_restoreIntoOpenHandle_restoresOriginalData() throws {
+        let dbPath = createEmptyDB()
+        let db = try openDB(path: dbPath)
+        defer { sqlite3_close(db) }
+
+        try executeSQL(db: db, sql: "CREATE TABLE original_data (id INTEGER PRIMARY KEY, value TEXT);")
+        try executeSQL(db: db, sql: "INSERT INTO original_data VALUES (1, 'before');")
+        try runner.createBackup(db: db, dbPath: dbPath)
+
+        try executeSQL(db: db, sql: "DROP TABLE original_data;")
+        try executeSQL(db: db, sql: "CREATE TABLE corrupted_data (id INTEGER);")
+
+        let restored = try runner.restoreFromBackup(into: db, dbPath: dbPath)
+        XCTAssertTrue(restored)
+
+        let tables = try listTables(db: db)
+        XCTAssertTrue(tables.contains("original_data"))
+        XCTAssertFalse(tables.contains("corrupted_data"))
+        XCTAssertEqual(try scalarString(db: db, sql: "SELECT value FROM original_data WHERE id = 1;"), "before")
+    }
+
     /// バックアップ復旧: バックアップファイルが存在しない場合
     func test_restoreFromBackup_noBackupFile_returnsFalseOrThrows() throws {
         let dbPath = tempDir.appendingPathComponent("nonexistent.sqlite3").path
@@ -264,6 +287,21 @@ final class MigrationRunnerTests: XCTestCase {
             throw NSError(domain: "TestDB", code: Int(rc),
                           userInfo: [NSLocalizedDescriptionKey: "SQL error: \(msg) for: \(sql)"])
         }
+    }
+
+
+    private func scalarString(db: OpaquePointer, sql: String) throws -> String? {
+        var stmt: OpaquePointer?
+        let rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nil)
+        guard rc == SQLITE_OK else {
+            throw NSError(domain: "TestDB", code: Int(rc))
+        }
+        defer { sqlite3_finalize(stmt) }
+
+        guard sqlite3_step(stmt) == SQLITE_ROW, let cString = sqlite3_column_text(stmt, 0) else {
+            return nil
+        }
+        return String(cString: cString)
     }
 
     private func listTables(db: OpaquePointer) throws -> [String] {

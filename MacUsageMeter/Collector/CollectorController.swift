@@ -253,6 +253,7 @@ actor CollectorController {
             do {
                 try await flushCaches()
                 try databaseManager.insertPowerSample(sample)
+                try saveDebugCaptureIfPresent(response: response, capturedAtMs: now)
             } catch {
                 Self.logger.error("Failed to save power sample: \(error.localizedDescription)")
                 cachePowerSample(sample)
@@ -610,6 +611,21 @@ actor CollectorController {
     }
 
     // MARK: - Private
+
+    private func saveDebugCaptureIfPresent(response: PowerSampleResponse, capturedAtMs: Int64) throws {
+        guard let rawCaptureId = response.rawCaptureId else { return }
+        guard response.debugRawStdout != nil || response.debugRawStderr != nil || response.debugExitCode != nil else { return }
+
+        try databaseManager.insertDebugCapture(
+            id: rawCaptureId,
+            capturedAtMs: capturedAtMs,
+            command: "/usr/bin/powermetrics --sample-count 1 --sample-rate 500 -f plist --samplers cpu_power,gpu_power,ane_power",
+            rawStdout: response.debugRawStdout,
+            rawStderr: response.debugRawStderr,
+            exitCode: response.debugExitCode,
+            relatedSampleId: nil
+        )
+    }
 
     private func loadSettings() async {
         do {

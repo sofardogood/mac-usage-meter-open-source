@@ -55,6 +55,21 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate {
     /// 能力検出結果キャッシュ
     private var cachedProbeResult: CapabilityProbe.ProbeResult?
 
+    /// Helper 内部状態の排他制御
+    private let stateLock = NSLock()
+
+    /// 能力検出キャッシュの排他制御
+    private let capabilityLock = NSLock()
+
+    /// powermetrics は root 子プロセスを起動するため、同時実行を1件に制限する
+    private let powerSampleSemaphore = DispatchSemaphore(value: 1)
+
+    /// XPC から受け付ける powermetrics タイムアウト範囲
+    private static let allowedPowerTimeoutRange = 1...15
+
+    /// XPC 応答に載せるデバッグ raw の上限。異常時にも IPC/DB を圧迫しないよう切り詰める。
+    private static let debugRawCaptureMaxCharacters = 1_000_000
+
     // MARK: - NSXPCListenerDelegate
 
     /// 新しい接続を受理するか判定する
@@ -90,13 +105,15 @@ extension HelperDelegate: HelperProtocol {
     func getServiceStatus(withReply reply: @escaping (Data) -> Void) {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
 
+        let snapshot = stateSnapshot()
+
         // Helper は root で動作しているので権限は granted
         let response = ServiceStatusResponse(
             serviceState: .ready,
             privilegeState: .granted,
             protocolVersion: Self.protocolVersion,
-            lastSuccessAtMs: lastPowerSampleAtMs ?? lastWifiSnapshotAtMs,
-            lastErrorCode: lastErrorCode,
+            lastSuccessAtMs: snapshot.lastPowerSampleAtMs ?? snapshot.lastWifiSnapshotAtMs,
+            lastErrorCode: snapshot.lastErrorCode,
             helperVersion: Self.helperVersion
         )
 
@@ -120,13 +137,7 @@ extension HelperDelegate: HelperProtocol {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
 
         // 能力検出 (キャッシュがあればそれを使う)
-        let probeResult: CapabilityProbe.ProbeResult
-        if let cached = cachedProbeResult {
-            probeResult = cached
-        } else {
-            probeResult = capabilityProbe.probe()
-            cachedProbeResult = probeResult
-        }
+        let probeResult = getCachedProbeResult()
 
         let profiles = probeResult.profiles.map {
             CapabilitiesResponse.SamplingProfile(
@@ -168,6 +179,37 @@ extension HelperDelegate: HelperProtocol {
     func requestPowerSample(profileId: String, timeoutSec: Int, collectDebugRaw: Bool, withReply reply: @escaping (Data) -> Void) {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
 
+        guard Self.allowedPowerTimeoutRange.contains(timeoutSec) else {
+            replyPowerSampleError(
+                reply,
+                errorCode: "IPC-004",
+                message: "Invalid timeoutSec: allowed range is \(Self.allowedPowerTimeoutRange.lowerBound)...\(Self.allowedPowerTimeoutRange.upperBound)",
+                capturedAtMs: now
+            )
+            return
+        }
+
+        guard isAllowedProfileId(profileId) else {
+            replyPowerSampleError(
+                reply,
+                errorCode: "IPC-004",
+                message: "Invalid profileId",
+                capturedAtMs: now
+            )
+            return
+        }
+
+        guard powerSampleSemaphore.wait(timeout: .now()) == .success else {
+            replyPowerSampleError(
+                reply,
+                errorCode: "IPC-005",
+                message: "Another power sample request is already running",
+                capturedAtMs: now
+            )
+            return
+        }
+        defer { powerSampleSemaphore.signal() }
+
         do {
             let result = try powerMetricsExecutor.execute(timeoutSec: timeoutSec)
 
@@ -175,8 +217,7 @@ extension HelperDelegate: HelperProtocol {
             let rawCaptureId: String? = collectDebugRaw ? UUID().uuidString : nil
 
             if result.exitCode != 0 {
-                consecutiveFailures += 1
-                lastErrorCode = "PWR-001"
+                recordFailure(errorCode: "PWR-001")
                 let response = PowerSampleResponse(
                     status: "fail",
                     sourceLevel: "C",
@@ -203,17 +244,14 @@ extension HelperDelegate: HelperProtocol {
 
             let parseResult = powerMetricsParser.parse(result.stdout)
 
-            totalPowerSamples += 1
-            lastPowerSampleAtMs = now
+            recordPowerSample(capturedAtMs: now)
 
             let status: String
             if parseResult.avgWatts != nil {
-                consecutiveFailures = 0
-                lastErrorCode = nil
+                recordSuccess()
                 status = parseResult.parserStatus == "success" ? "success" : "partial"
             } else {
-                consecutiveFailures += 1
-                lastErrorCode = "PWR-003"
+                recordFailure(errorCode: "PWR-003")
                 status = parseResult.sourceLevel == "C" ? "missing" : "fail"
             }
 
@@ -228,7 +266,10 @@ extension HelperDelegate: HelperProtocol {
                 sampleDurationSec: parseResult.sampleDurationSec,
                 missingKeys: parseResult.missingKeys.isEmpty ? nil : parseResult.missingKeys,
                 rawCaptureId: rawCaptureId,
-                errorCode: parseResult.avgWatts == nil ? "PWR-003" : nil
+                errorCode: parseResult.avgWatts == nil ? "PWR-003" : nil,
+                debugRawStdout: debugRaw(result.stdout, enabled: collectDebugRaw),
+                debugRawStderr: debugRaw(result.stderr, enabled: collectDebugRaw),
+                debugExitCode: collectDebugRaw ? result.exitCode : nil
             )
 
             let resultStatus: XPCResponseEnvelope<PowerSampleResponse>.ResultStatus = parseResult.avgWatts != nil ? .ok : .partial
@@ -243,15 +284,13 @@ extension HelperDelegate: HelperProtocol {
             if let data = try? JSONEncoder().encode(envelope) { reply(data) }
 
         } catch let error as PowerMetricsError {
-            consecutiveFailures += 1
-
             let errorCode: String
             switch error {
             case .timeout: errorCode = "PWR-004"
             case .executionFailed: errorCode = "PWR-001"
             case .parseFailed: errorCode = "PWR-003"
             }
-            lastErrorCode = errorCode
+            recordFailure(errorCode: errorCode)
 
             let response = PowerSampleResponse(
                 status: "fail",
@@ -289,8 +328,7 @@ extension HelperDelegate: HelperProtocol {
         do {
             let snapshot = try wifiCounterReader.readCounters()
 
-            totalWifiSnapshots += 1
-            lastWifiSnapshotAtMs = now
+            recordWifiSnapshot(capturedAtMs: now)
 
             let response = WifiSnapshotResponse(
                 status: "success",
@@ -371,16 +409,18 @@ extension HelperDelegate: HelperProtocol {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         let uptimeSec = Int(Date().timeIntervalSince(startedAt))
 
+        let snapshot = stateSnapshot()
+
         let response = HealthReportResponse(
             helperPid: Int(ProcessInfo.processInfo.processIdentifier),
             uptimeSec: uptimeSec,
             helperVersion: Self.helperVersion,
-            lastPowerSampleAtMs: lastPowerSampleAtMs,
-            lastWifiSnapshotAtMs: lastWifiSnapshotAtMs,
-            totalPowerSamples: totalPowerSamples,
-            totalWifiSnapshots: totalWifiSnapshots,
-            consecutiveFailures: consecutiveFailures,
-            errorCode: lastErrorCode
+            lastPowerSampleAtMs: snapshot.lastPowerSampleAtMs,
+            lastWifiSnapshotAtMs: snapshot.lastWifiSnapshotAtMs,
+            totalPowerSamples: snapshot.totalPowerSamples,
+            totalWifiSnapshots: snapshot.totalWifiSnapshots,
+            consecutiveFailures: snapshot.consecutiveFailures,
+            errorCode: snapshot.lastErrorCode
         )
 
         let envelope = XPCResponseEnvelope<HealthReportResponse>(
@@ -398,10 +438,10 @@ extension HelperDelegate: HelperProtocol {
     func rotateDebugCapture(enabled: Bool, withReply reply: @escaping (Data) -> Void) {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
 
-        debugCaptureEnabled = enabled
+        let currentState = setDebugCaptureEnabled(enabled)
 
         let response = DebugCaptureResponse(
-            currentState: debugCaptureEnabled,
+            currentState: currentState,
             errorCode: nil
         )
 
@@ -417,6 +457,121 @@ extension HelperDelegate: HelperProtocol {
     }
 
     // MARK: - Private Helpers
+
+    /// profileId が能力検出済み profile の allowlist に含まれているか確認する
+    private func isAllowedProfileId(_ profileId: String) -> Bool {
+        guard !profileId.isEmpty, profileId.count <= 128 else { return false }
+
+        let probeResult = getCachedProbeResult()
+
+        return probeResult.profiles.contains { $0.profileId == profileId }
+    }
+
+    private func getCachedProbeResult() -> CapabilityProbe.ProbeResult {
+        capabilityLock.lock()
+        defer { capabilityLock.unlock() }
+
+        if let cached = cachedProbeResult {
+            return cached
+        }
+
+        let probeResult = capabilityProbe.probe()
+        cachedProbeResult = probeResult
+        return probeResult
+    }
+
+    private func debugRaw(_ value: String, enabled: Bool) -> String? {
+        guard enabled else { return nil }
+        guard value.count > Self.debugRawCaptureMaxCharacters else { return value }
+
+        let endIndex = value.index(value.startIndex, offsetBy: Self.debugRawCaptureMaxCharacters)
+        return String(value[..<endIndex]) + "\n[truncated by MacUsageMeter debug capture]"
+    }
+
+    private func replyPowerSampleError(_ reply: @escaping (Data) -> Void, errorCode: String, message: String, capturedAtMs: Int64) {
+        let response = PowerSampleResponse(
+            status: "fail",
+            sourceLevel: "C",
+            parserStatus: "fail",
+            avgWatts: nil,
+            cpuWatts: nil,
+            gpuWatts: nil,
+            aneWatts: nil,
+            sampleDurationSec: nil,
+            missingKeys: nil,
+            rawCaptureId: nil,
+            errorCode: errorCode
+        )
+
+        let envelope = XPCResponseEnvelope<PowerSampleResponse>(
+            result: .error,
+            errorCode: errorCode,
+            message: message,
+            capturedAtMs: capturedAtMs,
+            data: response
+        )
+
+        if let data = try? JSONEncoder().encode(envelope) { reply(data) }
+    }
+
+    private func recordPowerSample(capturedAtMs: Int64) {
+        stateLock.lock()
+        totalPowerSamples += 1
+        lastPowerSampleAtMs = capturedAtMs
+        stateLock.unlock()
+    }
+
+    private func recordWifiSnapshot(capturedAtMs: Int64) {
+        stateLock.lock()
+        totalWifiSnapshots += 1
+        lastWifiSnapshotAtMs = capturedAtMs
+        stateLock.unlock()
+    }
+
+    private func recordSuccess() {
+        stateLock.lock()
+        consecutiveFailures = 0
+        lastErrorCode = nil
+        stateLock.unlock()
+    }
+
+    private func recordFailure(errorCode: String) {
+        stateLock.lock()
+        consecutiveFailures += 1
+        lastErrorCode = errorCode
+        stateLock.unlock()
+    }
+
+    private func setDebugCaptureEnabled(_ enabled: Bool) -> Bool {
+        stateLock.lock()
+        debugCaptureEnabled = enabled
+        let currentState = debugCaptureEnabled
+        stateLock.unlock()
+        return currentState
+    }
+
+    private func stateSnapshot() -> StateSnapshot {
+        stateLock.lock()
+        let snapshot = StateSnapshot(
+            totalPowerSamples: totalPowerSamples,
+            totalWifiSnapshots: totalWifiSnapshots,
+            consecutiveFailures: consecutiveFailures,
+            lastPowerSampleAtMs: lastPowerSampleAtMs,
+            lastWifiSnapshotAtMs: lastWifiSnapshotAtMs,
+            lastErrorCode: lastErrorCode
+        )
+        stateLock.unlock()
+        return snapshot
+    }
+
+    private struct StateSnapshot {
+        let totalPowerSamples: Int
+        let totalWifiSnapshots: Int
+        let consecutiveFailures: Int
+        let lastPowerSampleAtMs: Int64?
+        let lastWifiSnapshotAtMs: Int64?
+        let lastErrorCode: String?
+    }
 
     /// エラーレスポンスを返す汎用ヘルパー
     private func replyError(_ reply: @escaping (Data) -> Void, errorCode: String, message: String) {

@@ -41,9 +41,9 @@ struct CSVExporter: Sendable {
                 formatLocal(sample.capturedAtMs),
                 csvCell(sample.avgWatts),
                 csvCell(sample.sampleDurationSec),
-                sample.sourceLevel.rawValue,
-                sample.status.rawValue,
-                sample.parserStatus.rawValue,
+                csvCell(sample.sourceLevel.rawValue),
+                csvCell(sample.status.rawValue),
+                csvCell(sample.parserStatus.rawValue),
                 csvCell(sample.outlierFlag),
                 csvCell(sample.errorCode)
             ].joined(separator: ",")
@@ -67,13 +67,13 @@ struct CSVExporter: Sendable {
             let row = [
                 formatUTC(sample.capturedAtMs),
                 formatLocal(sample.capturedAtMs),
-                sample.interfaceName,
+                csvCell(sample.interfaceName),
                 csvCell(sample.sentBytesDelta),
                 csvCell(sample.recvBytesDelta),
                 csvCell(sample.sentBytesTotal),
                 csvCell(sample.recvBytesTotal),
                 csvCell(sample.counterResetFlag),
-                sample.status.rawValue,
+                csvCell(sample.status.rawValue),
                 csvCell(sample.errorCode)
             ].joined(separator: ",")
             csv += row + Self.crlf
@@ -94,7 +94,7 @@ struct CSVExporter: Sendable {
 
         for rollup in rollups {
             let row = [
-                rollup.dateLocal,
+                csvCell(rollup.dateLocal),
                 csvCell(rollup.powerKwh),
                 csvCell(rollup.wifiGb),
                 csvCell(rollup.powerCostYen),
@@ -149,6 +149,32 @@ struct CSVExporter: Sendable {
     /// 値を CSV セル文字列に変換する。nil の場合は空文字を返す。
     func csvCell<T>(_ value: T?) -> String {
         guard let v = value else { return "" }
-        return "\(v)"
+        return csvEscape("\(v)")
+    }
+
+    /// CSV セルとして必要な quoting/escaping を行う。
+    /// Excel 等で開いたときの formula injection を避けるため、危険な先頭文字には apostrophe を付与する。
+    func csvCell(_ value: String) -> String {
+        csvEscape(value)
+    }
+
+    private func csvEscape(_ value: String) -> String {
+        guard !value.isEmpty else { return "" }
+
+        var sanitized = value
+        if let first = sanitized.first, ["=", "+", "-", "@"].contains(String(first)) {
+            sanitized = "'" + sanitized
+        }
+
+        let needsQuoting = sanitized.contains(",")
+            || sanitized.contains("\"")
+            || sanitized.contains("\n")
+            || sanitized.contains("\r")
+
+        guard needsQuoting else {
+            return sanitized
+        }
+
+        return "\"" + sanitized.replacingOccurrences(of: "\"", with: "\"\"") + "\""
     }
 }

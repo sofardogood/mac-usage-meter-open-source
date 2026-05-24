@@ -23,7 +23,7 @@
     <key>SMPrivilegedExecutables</key>
     <dict>
         <key>com.macusagemeter.helper</key>
-        <string>identifier "com.macusagemeter.helper" and anchor apple generic and certificate leaf[subject.CN] = "Developer ID Application: *"</string>
+        <string>identifier "com.macusagemeter.helper" and anchor apple generic and certificate leaf[subject.OU] = "$(DEVELOPMENT_TEAM)"</string>
     </dict>
 </dict>
 </plist>

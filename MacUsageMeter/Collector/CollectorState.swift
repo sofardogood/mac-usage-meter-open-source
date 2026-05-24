@@ -35,9 +35,9 @@ enum CollectorState: String, Codable, Sendable {
         case (.starting, .capabilitiesLimited):
             return .limitedReady
 
-        // starting → not-ready: Helper 未登録 / 権限拒否
+        // starting → limited-ready: Helper 未登録 / 権限拒否 (Wi-Fi はローカルで計測可能)
         case (.starting, .helperUnavailable):
-            return .notReady
+            return .limitedReady
 
         // normal → degraded: 電力サンプル 3 連続失敗
         case (.normal, .consecutiveFailures):
@@ -53,6 +53,10 @@ enum CollectorState: String, Codable, Sendable {
 
         // not-ready → starting: 権限付与 / Helper 再登録成功
         case (.notReady, .privilegeGranted):
+            return .starting
+
+        // limited-ready → starting: 権限付与 / Helper 再登録成功
+        case (.limitedReady, .privilegeGranted):
             return .starting
 
         default:

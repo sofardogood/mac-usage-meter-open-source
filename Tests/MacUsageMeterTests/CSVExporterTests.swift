@@ -254,6 +254,19 @@ final class CSVExporterTests: XCTestCase {
         XCTAssertFalse(avgWattsStr.contains(","), "Should not use comma as decimal separator")
     }
 
+
+    /// CSV セル: カンマ・クォート・改行を含む値は RFC 4180 互換で escape されること
+    func test_csvCell_escapesCommaQuoteAndNewline() {
+        let escaped = exporter.csvCell("en,\"bad\"\nnext")
+        XCTAssertEqual(escaped, "\"en,\"\"bad\"\"\nnext\"")
+    }
+
+    /// CSV セル: 表計算ソフトで式として解釈されうる値を neutralize すること
+    func test_csvCell_neutralizesFormulaInjectionPrefix() {
+        XCTAssertEqual(exporter.csvCell("=cmd|'/C calc'!A0"), "'=cmd|'/C calc'!A0")
+        XCTAssertEqual(exporter.csvCell("@SUM(1,2)"), "\"'@SUM(1,2)\"")
+    }
+
     // MARK: - Multiple Rows
 
     /// 複数行出力: captured_at_ms 昇順

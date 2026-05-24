@@ -13,8 +13,6 @@ final class MenuBarViewModel: ObservableObject {
     enum DisplayState: Sendable {
         /// 通常表示: 電力値と通信量
         case normal(watts: Double, wifiText: String)
-        /// 欠測
-        case missing
         /// 重大エラー
         case error
         /// 縮退 (アイコンのみ)
@@ -61,46 +59,19 @@ final class MenuBarViewModel: ObservableObject {
     }
 
     /// 表示を更新する
+    ///
+    /// 状態に関わらず、DB にデータがあれば常に電力値と Wi-Fi 通信量を表示する。
     func refresh() {
         Task {
-            let state = await collectorController.state
-            let latestPower = await collectorController.getLatestPowerSample()
-            // DB アクセスをメインスレッド外で実行する
-            let wifiText = await Task.detached { [databaseManager] in
-                Self.fetchTodayWifiUsageText(databaseManager: databaseManager)
+            let (latestWatts, wifiText) = await Task.detached { [databaseManager] in
+                let watts = (try? databaseManager.fetchLatestSuccessPowerSample())?.avgWatts
+                let wifi = Self.fetchTodayWifiUsageText(databaseManager: databaseManager)
+                return (watts, wifi)
             }.value
 
-            switch state {
-            case .normal:
-                if let watts = latestPower?.avgWatts {
-                    displayState = .normal(watts: watts, wifiText: wifiText)
-                    tooltipText = buildNormalTooltip(watts: watts)
-                } else {
-                    displayState = .compact
-                    tooltipText = "データを取得中..."
-                }
-
-            case .starting:
-                displayState = .compact
-                tooltipText = "起動中..."
-
-            case .degraded:
-                if let watts = latestPower?.avgWatts {
-                    displayState = .normal(watts: watts, wifiText: wifiText)
-                    tooltipText = "一部のデータが取得できていません"
-                } else {
-                    displayState = .missing
-                    tooltipText = "電力データの取得に失敗しています"
-                }
-
-            case .limitedReady:
-                displayState = .missing
-                tooltipText = "電力の計測ができない環境です"
-
-            case .notReady:
-                displayState = .error
-                tooltipText = "詳細を開いて対処を確認"
-            }
+            let watts = latestWatts ?? 0
+            displayState = .normal(watts: watts, wifiText: wifiText)
+            tooltipText = buildNormalTooltip(watts: watts)
         }
     }
 
@@ -114,9 +85,6 @@ final class MenuBarViewModel: ObservableObject {
         case .normal(let watts, let wifiText):
             let wattsStr = String(format: "%.1fW", watts)
             updateButton(button, image: Self.boltIcon, title: Self.boltIcon == nil ? "⚡ \(wattsStr) / \(wifiText)" : " \(wattsStr) / \(wifiText)")
-
-        case .missing:
-            updateButton(button, image: Self.warnIcon, title: Self.warnIcon == nil ? "⚠ 未測定" : " 未測定")
 
         case .error:
             updateButton(button, image: Self.warnIcon, title: Self.warnIcon == nil ? "⚠ 要確認" : " 要確認")

@@ -39,9 +39,9 @@ struct MigrationRunner: Sendable {
 
         Self.logger.info("Migrating DB from version \(currentVersion) to \(target)")
 
-        // バックアップ作成
+        // バックアップ作成。開いている DB ハンドルから sqlite3_backup API で一貫したコピーを作る。
         do {
-            try createBackup(dbPath: dbPath)
+            try createBackup(db: db, dbPath: dbPath)
         } catch {
             Self.logger.warning("Backup creation failed: \(error.localizedDescription), proceeding with migration")
         }
@@ -58,9 +58,9 @@ struct MigrationRunner: Sendable {
                 sqlite3_free(errMsg)
                 Self.logger.error("Migration v\(version) failed: \(msg)")
 
-                // 復旧試行
-                if let restored = try? restoreFromBackup(dbPath: dbPath), restored {
-                    Self.logger.info("Restored from backup after migration failure")
+                // 復旧試行。開いた DB ハンドルを保持したままファイルを削除せず、backup API で内容を戻す。
+                if let restored = try? restoreFromBackup(into: db, dbPath: dbPath), restored {
+                    Self.logger.info("Restored open DB handle from backup after migration failure")
                 }
                 throw DatabaseError.migrationFailed(message: "Migration v\(version) failed: \(msg)")
             }
@@ -70,6 +70,9 @@ struct MigrationRunner: Sendable {
             let pragmaRc = sqlite3_exec(db, pragmaSQL, nil, nil, nil)
             if pragmaRc != SQLITE_OK {
                 Self.logger.error("Failed to set user_version to \(version)")
+                if let restored = try? restoreFromBackup(into: db, dbPath: dbPath), restored {
+                    Self.logger.info("Restored open DB handle from backup after user_version failure")
+                }
                 throw DatabaseError.migrationFailed(message: "Failed to set user_version to \(version)")
             }
 
@@ -117,6 +120,40 @@ struct MigrationRunner: Sendable {
         return try getCurrentVersion(db: db)
     }
 
+    /// バックアップを作成する (DB ハンドル版)
+    ///
+    /// 開いている SQLite DB から sqlite3_backup API で一貫したバックアップを作成する。
+    /// WAL ファイルを直接コピーしないため、稼働中 DB でも復旧元として安全に扱える。
+    func createBackup(db: OpaquePointer, dbPath: String) throws {
+        let backupPath = dbPath + ".bak"
+        let fm = FileManager.default
+
+        for path in [backupPath, backupPath + "-wal", backupPath + "-shm"] where fm.fileExists(atPath: path) {
+            try fm.removeItem(atPath: path)
+        }
+
+        var backupDB: OpaquePointer?
+        let openRc = sqlite3_open_v2(backupPath, &backupDB, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nil)
+        guard openRc == SQLITE_OK, let backupHandle = backupDB else {
+            let msg = backupDB.flatMap { String(cString: sqlite3_errmsg($0)) } ?? "unknown"
+            sqlite3_close(backupDB)
+            throw DatabaseError.migrationFailed(message: "Cannot open backup DB: \(msg)")
+        }
+        defer { sqlite3_close(backupHandle) }
+
+        guard let backup = sqlite3_backup_init(backupHandle, "main", db, "main") else {
+            let msg = String(cString: sqlite3_errmsg(backupHandle))
+            throw DatabaseError.migrationFailed(message: "Cannot initialize DB backup: \(msg)")
+        }
+
+        let stepRc = sqlite3_backup_step(backup, -1)
+        let finishRc = sqlite3_backup_finish(backup)
+        guard stepRc == SQLITE_DONE && finishRc == SQLITE_OK else {
+            let msg = String(cString: sqlite3_errmsg(backupHandle))
+            throw DatabaseError.migrationFailed(message: "DB backup failed: step=\(stepRc), finish=\(finishRc), \(msg)")
+        }
+    }
+
     /// バックアップを作成する
     ///
     /// DB ファイルを monitor.sqlite3.bak にコピーする
@@ -149,6 +186,42 @@ struct MigrationRunner: Sendable {
             }
             try fm.copyItem(atPath: shmPath, toPath: shmBackupPath)
         }
+    }
+
+    /// バックアップから開いている DB ハンドルへ復旧する。
+    ///
+    /// migration 失敗時に、DB ファイルを削除せず同じ SQLite ハンドルへ内容を戻すために使う。
+    func restoreFromBackup(into db: OpaquePointer, dbPath: String) throws -> Bool {
+        let backupPath = dbPath + ".bak"
+        let fm = FileManager.default
+
+        guard fm.fileExists(atPath: backupPath) else {
+            Self.logger.warning("No backup file found at \(backupPath)")
+            return false
+        }
+
+        var backupDB: OpaquePointer?
+        let openRc = sqlite3_open_v2(backupPath, &backupDB, SQLITE_OPEN_READONLY, nil)
+        guard openRc == SQLITE_OK, let backupHandle = backupDB else {
+            let msg = backupDB.flatMap { String(cString: sqlite3_errmsg($0)) } ?? "unknown"
+            sqlite3_close(backupDB)
+            throw DatabaseError.migrationFailed(message: "Cannot open backup DB for restore: \(msg)")
+        }
+        defer { sqlite3_close(backupHandle) }
+
+        guard let backup = sqlite3_backup_init(db, "main", backupHandle, "main") else {
+            let msg = String(cString: sqlite3_errmsg(db))
+            throw DatabaseError.migrationFailed(message: "Cannot initialize DB restore: \(msg)")
+        }
+
+        let stepRc = sqlite3_backup_step(backup, -1)
+        let finishRc = sqlite3_backup_finish(backup)
+        guard stepRc == SQLITE_DONE && finishRc == SQLITE_OK else {
+            let msg = String(cString: sqlite3_errmsg(db))
+            throw DatabaseError.migrationFailed(message: "DB restore failed: step=\(stepRc), finish=\(finishRc), \(msg)")
+        }
+
+        return true
     }
 
     /// バックアップからの復旧を試みる

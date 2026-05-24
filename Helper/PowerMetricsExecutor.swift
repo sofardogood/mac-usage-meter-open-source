@@ -14,6 +14,9 @@ struct PowerMetricsExecutor: Sendable {
     /// powermetrics 引数テンプレート
     static let baseArguments = ["--sample-count", "1", "-f", "plist", "--samplers", "cpu_power"]
 
+    /// デバッグキャプチャに記録するコマンド表現
+    static let commandDescription = "\(executablePath) --sample-count 1 --sample-rate 500 -f plist --samplers cpu_power,gpu_power,ane_power"
+
     // MARK: - Execution
 
     /// powermetrics を実行し plist 出力を取得する

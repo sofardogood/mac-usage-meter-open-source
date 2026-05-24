@@ -7,11 +7,12 @@ import XCTest
 /// 全遷移パス:
 ///   starting → normal (capabilitiesReady)
 ///   starting → limitedReady (capabilitiesLimited)
-///   starting → notReady (helperUnavailable)
+///   starting → limitedReady (helperUnavailable)
 ///   normal → degraded (consecutiveFailures: 3連続失敗)
 ///   degraded → normal (sampleSuccess: 成功1件)
 ///   degraded → limitedReady (profileVerificationFailed: 10連続失敗)
 ///   notReady → starting (privilegeGranted: 権限付与)
+///   limitedReady → starting (privilegeGranted: 権限付与)
 final class CollectorStateTests: XCTestCase {
 
     // MARK: - Starting → Normal
@@ -34,14 +35,14 @@ final class CollectorStateTests: XCTestCase {
         XCTAssertEqual(next, .limitedReady)
     }
 
-    // MARK: - Starting → Not Ready
+    // MARK: - Starting → Limited Ready (Helper unavailable)
 
-    /// starting + helperUnavailable → not-ready
-    /// 条件: Helper 未登録 / 権限拒否
-    func test_starting_helperUnavailable_transitionsToNotReady() {
+    /// starting + helperUnavailable → limited-ready
+    /// 条件: Helper 未登録 / 権限拒否 (Wi-Fi はローカルで計測可能)
+    func test_starting_helperUnavailable_transitionsToLimitedReady() {
         let state = CollectorState.starting
         let next = state.transition(on: .helperUnavailable)
-        XCTAssertEqual(next, .notReady)
+        XCTAssertEqual(next, .limitedReady)
     }
 
     // MARK: - Normal → Degraded
@@ -80,6 +81,16 @@ final class CollectorStateTests: XCTestCase {
     /// 条件: 権限付与 / Helper 再登録成功
     func test_notReady_privilegeGranted_transitionsToStarting() {
         let state = CollectorState.notReady
+        let next = state.transition(on: .privilegeGranted)
+        XCTAssertEqual(next, .starting)
+    }
+
+    // MARK: - Limited Ready → Starting
+
+    /// limited-ready + privilegeGranted → starting
+    /// 条件: 権限付与 / Helper 再登録成功
+    func test_limitedReady_privilegeGranted_transitionsToStarting() {
+        let state = CollectorState.limitedReady
         let next = state.transition(on: .privilegeGranted)
         XCTAssertEqual(next, .starting)
     }
@@ -244,15 +255,15 @@ final class CollectorStateTests: XCTestCase {
         XCTAssertEqual(state, .limitedReady)
     }
 
-    /// 権限回復フロー: starting → notReady → starting → normal
-    func test_fullPath_startingNotReadyStartingNormal() {
+    /// 権限回復フロー: starting → limitedReady → starting → normal
+    func test_fullPath_startingLimitedReadyStartingNormal() {
         var state = CollectorState.starting
 
         guard let s1 = state.transition(on: .helperUnavailable) else {
-            return XCTFail("Expected transition to notReady")
+            return XCTFail("Expected transition to limitedReady")
         }
         state = s1
-        XCTAssertEqual(state, .notReady)
+        XCTAssertEqual(state, .limitedReady)
 
         guard let s2 = state.transition(on: .privilegeGranted) else {
             return XCTFail("Expected transition to starting")

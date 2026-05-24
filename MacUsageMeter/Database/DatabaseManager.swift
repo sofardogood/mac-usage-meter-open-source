@@ -150,6 +150,22 @@ final class DatabaseManager: @unchecked Sendable {
         return nil
     }
 
+    /// 最新の成功した電力サンプルを取得する (avg_watts が NOT NULL)
+    func fetchLatestSuccessPowerSample() throws -> PowerSample? {
+        lock.lock()
+        defer { lock.unlock() }
+
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        let rc = sqlite3_prepare_v2(db, PowerSampleQueries.fetchLatestSuccess, -1, &stmt, nil)
+        guard rc == SQLITE_OK else { throw dbError("prepare fetchLatestSuccessPowerSample") }
+
+        if sqlite3_step(stmt) == SQLITE_ROW {
+            return readPowerSample(stmt)
+        }
+        return nil
+    }
+
     // MARK: - Wi-Fi Samples
 
     /// Wi-Fi サンプルを保存する

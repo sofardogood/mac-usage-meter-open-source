@@ -98,8 +98,8 @@ final class XPCClient: @unchecked Sendable {
         return connection != nil
     }
 
-    /// Helper のプロキシを取得する
-    private func proxy() throws -> HelperProtocol {
+    /// 接続を取得する
+    private func getConnection() throws -> NSXPCConnection {
         lock.lock()
         let conn = connection
         lock.unlock()
@@ -107,29 +107,29 @@ final class XPCClient: @unchecked Sendable {
         guard let conn = conn else {
             throw XPCError.notConnected
         }
-
-        guard let proxy = conn.remoteObjectProxyWithErrorHandler({ error in
-            Self.logger.error("XPC proxy error: \(error.localizedDescription)")
-        }) as? HelperProtocol else {
-            throw XPCError.proxyFailed
-        }
-
-        return proxy
+        return conn
     }
 
-    // MARK: - Timeout Helpers
-
-    /// タイムアウト付きで XPC コールを実行する
-    private func withTimeout<T: Sendable>(
-        seconds: UInt64,
-        operation: @escaping @Sendable () async throws -> T
+    /// XPC コールを安全に実行する (エラーハンドラで continuation を resume)
+    private func xpcCall<T: Sendable>(
+        timeoutSec: UInt64,
+        _ body: @escaping @Sendable (HelperProtocol, CheckedContinuation<T, any Error>) -> Void
     ) async throws -> T {
-        try await withThrowingTaskGroup(of: T.self) { group in
+        let conn = try getConnection()
+        return try await withThrowingTaskGroup(of: T.self) { group in
             group.addTask {
-                try await operation()
+                try await withCheckedThrowingContinuation { continuation in
+                    guard let proxy = conn.remoteObjectProxyWithErrorHandler({ error in
+                        continuation.resume(throwing: error)
+                    }) as? HelperProtocol else {
+                        continuation.resume(throwing: XPCError.proxyFailed)
+                        return
+                    }
+                    body(proxy, continuation)
+                }
             }
             group.addTask {
-                try await Task.sleep(nanoseconds: seconds * 1_000_000_000)
+                try await Task.sleep(nanoseconds: timeoutSec * 1_000_000_000)
                 throw XPCError.timeout
             }
             guard let result = try await group.next() else {
@@ -144,24 +144,18 @@ final class XPCClient: @unchecked Sendable {
 
     /// PING: 疎通確認 (タイムアウト: 2秒)
     func ping() async throws -> Bool {
-        let proxy = try proxy()
-        return try await withTimeout(seconds: 2) {
-            try await withCheckedThrowingContinuation { continuation in
-                proxy.ping { result in
-                    continuation.resume(returning: result)
-                }
+        try await xpcCall(timeoutSec: 2) { proxy, continuation in
+            proxy.ping { result in
+                continuation.resume(returning: result)
             }
         }
     }
 
     /// GET_SERVICE_STATUS: 登録状態・権限状態を取得する (タイムアウト: 3秒)
     func getServiceStatus() async throws -> ServiceStatusResponse {
-        let proxy = try proxy()
-        let data: Data = try await withTimeout(seconds: 3) {
-            try await withCheckedThrowingContinuation { continuation in
-                proxy.getServiceStatus { data in
-                    continuation.resume(returning: data)
-                }
+        let data: Data = try await xpcCall(timeoutSec: 3) { proxy, continuation in
+            proxy.getServiceStatus { data in
+                continuation.resume(returning: data)
             }
         }
         let envelope = try JSONDecoder().decode(XPCResponseEnvelope<ServiceStatusResponse>.self, from: data)
@@ -173,12 +167,9 @@ final class XPCClient: @unchecked Sendable {
 
     /// GET_CAPABILITIES: 能力検出結果を取得する (タイムアウト: 5秒)
     func getCapabilities() async throws -> CapabilitiesResponse {
-        let proxy = try proxy()
-        let data: Data = try await withTimeout(seconds: 5) {
-            try await withCheckedThrowingContinuation { continuation in
-                proxy.getCapabilities { data in
-                    continuation.resume(returning: data)
-                }
+        let data: Data = try await xpcCall(timeoutSec: 5) { proxy, continuation in
+            proxy.getCapabilities { data in
+                continuation.resume(returning: data)
             }
         }
         let envelope = try JSONDecoder().decode(XPCResponseEnvelope<CapabilitiesResponse>.self, from: data)
@@ -190,13 +181,10 @@ final class XPCClient: @unchecked Sendable {
 
     /// REQUEST_POWER_SAMPLE: 電力サンプルを取得する (タイムアウト: 12秒)
     func requestPowerSample(profileId: String, timeoutSec: Int, collectDebugRaw: Bool) async throws -> PowerSampleResponse {
-        let proxy = try proxy()
         let timeoutSeconds = UInt64(timeoutSec) + 4 // IPC マージン
-        let data: Data = try await withTimeout(seconds: timeoutSeconds) {
-            try await withCheckedThrowingContinuation { continuation in
-                proxy.requestPowerSample(profileId: profileId, timeoutSec: timeoutSec, collectDebugRaw: collectDebugRaw) { data in
-                    continuation.resume(returning: data)
-                }
+        let data: Data = try await xpcCall(timeoutSec: timeoutSeconds) { proxy, continuation in
+            proxy.requestPowerSample(profileId: profileId, timeoutSec: timeoutSec, collectDebugRaw: collectDebugRaw) { data in
+                continuation.resume(returning: data)
             }
         }
         let envelope = try JSONDecoder().decode(XPCResponseEnvelope<PowerSampleResponse>.self, from: data)
@@ -208,12 +196,9 @@ final class XPCClient: @unchecked Sendable {
 
     /// REQUEST_WIFI_SNAPSHOT: Wi-Fi カウンタを取得する (タイムアウト: 5秒)
     func requestWifiSnapshot() async throws -> WifiSnapshotResponse {
-        let proxy = try proxy()
-        let data: Data = try await withTimeout(seconds: 5) {
-            try await withCheckedThrowingContinuation { continuation in
-                proxy.requestWifiSnapshot { data in
-                    continuation.resume(returning: data)
-                }
+        let data: Data = try await xpcCall(timeoutSec: 5) { proxy, continuation in
+            proxy.requestWifiSnapshot { data in
+                continuation.resume(returning: data)
             }
         }
         let envelope = try JSONDecoder().decode(XPCResponseEnvelope<WifiSnapshotResponse>.self, from: data)
@@ -225,12 +210,9 @@ final class XPCClient: @unchecked Sendable {
 
     /// RELOAD_PRIVILEGE_STATE: 権限状態を再確認する (タイムアウト: 3秒)
     func reloadPrivilegeState() async throws -> PrivilegeStateResponse {
-        let proxy = try proxy()
-        let data: Data = try await withTimeout(seconds: 3) {
-            try await withCheckedThrowingContinuation { continuation in
-                proxy.reloadPrivilegeState { data in
-                    continuation.resume(returning: data)
-                }
+        let data: Data = try await xpcCall(timeoutSec: 3) { proxy, continuation in
+            proxy.reloadPrivilegeState { data in
+                continuation.resume(returning: data)
             }
         }
         let envelope = try JSONDecoder().decode(XPCResponseEnvelope<PrivilegeStateResponse>.self, from: data)
@@ -242,12 +224,9 @@ final class XPCClient: @unchecked Sendable {
 
     /// COLLECT_HEALTH_REPORT: 診断情報を取得する (タイムアウト: 5秒)
     func collectHealthReport() async throws -> HealthReportResponse {
-        let proxy = try proxy()
-        let data: Data = try await withTimeout(seconds: 5) {
-            try await withCheckedThrowingContinuation { continuation in
-                proxy.collectHealthReport { data in
-                    continuation.resume(returning: data)
-                }
+        let data: Data = try await xpcCall(timeoutSec: 5) { proxy, continuation in
+            proxy.collectHealthReport { data in
+                continuation.resume(returning: data)
             }
         }
         let envelope = try JSONDecoder().decode(XPCResponseEnvelope<HealthReportResponse>.self, from: data)
@@ -259,12 +238,9 @@ final class XPCClient: @unchecked Sendable {
 
     /// ROTATE_DEBUG_CAPTURE: デバッグ採取の切替 (タイムアウト: 3秒)
     func rotateDebugCapture(enabled: Bool) async throws -> DebugCaptureResponse {
-        let proxy = try proxy()
-        let data: Data = try await withTimeout(seconds: 3) {
-            try await withCheckedThrowingContinuation { continuation in
-                proxy.rotateDebugCapture(enabled: enabled) { data in
-                    continuation.resume(returning: data)
-                }
+        let data: Data = try await xpcCall(timeoutSec: 3) { proxy, continuation in
+            proxy.rotateDebugCapture(enabled: enabled) { data in
+                continuation.resume(returning: data)
             }
         }
         let envelope = try JSONDecoder().decode(XPCResponseEnvelope<DebugCaptureResponse>.self, from: data)

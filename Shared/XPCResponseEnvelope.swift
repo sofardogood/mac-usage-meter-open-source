@@ -117,9 +117,12 @@ public struct PowerSampleResponse: Codable, Sendable {
     public let sampleDurationSec: Double?
     public let missingKeys: [String]?
     public let rawCaptureId: String?
+    public let debugRawStdout: String?
+    public let debugRawStderr: String?
+    public let debugExitCode: Int32?
     public let errorCode: String?
 
-    public init(status: String, sourceLevel: String, parserStatus: String, avgWatts: Double?, cpuWatts: Double?, gpuWatts: Double?, aneWatts: Double?, sampleDurationSec: Double?, missingKeys: [String]?, rawCaptureId: String?, errorCode: String?) {
+    public init(status: String, sourceLevel: String, parserStatus: String, avgWatts: Double?, cpuWatts: Double?, gpuWatts: Double?, aneWatts: Double?, sampleDurationSec: Double?, missingKeys: [String]?, rawCaptureId: String?, errorCode: String?, debugRawStdout: String? = nil, debugRawStderr: String? = nil, debugExitCode: Int32? = nil) {
         self.status = status
         self.sourceLevel = sourceLevel
         self.parserStatus = parserStatus
@@ -130,6 +133,9 @@ public struct PowerSampleResponse: Codable, Sendable {
         self.sampleDurationSec = sampleDurationSec
         self.missingKeys = missingKeys
         self.rawCaptureId = rawCaptureId
+        self.debugRawStdout = debugRawStdout
+        self.debugRawStderr = debugRawStderr
+        self.debugExitCode = debugExitCode
         self.errorCode = errorCode
     }
 }

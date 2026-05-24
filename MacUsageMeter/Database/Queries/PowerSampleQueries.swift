@@ -29,6 +29,16 @@ enum PowerSampleQueries {
     LIMIT 1
     """
 
+    /// 最新の成功した電力サンプルを1件取得する (avg_watts が NOT NULL)
+    static let fetchLatestSuccess = """
+    SELECT id, captured_at_ms, avg_watts, sample_duration_sec, source_level,
+           status, parser_status, outlier_flag, raw_capture_id, error_code
+    FROM power_samples
+    WHERE avg_watts IS NOT NULL AND status IN ('success', 'partial')
+    ORDER BY captured_at_ms DESC
+    LIMIT 1
+    """
+
     /// 保持期限を超えた電力サンプルを削除する
     static let purge = """
     DELETE FROM power_samples WHERE captured_at_ms < ?

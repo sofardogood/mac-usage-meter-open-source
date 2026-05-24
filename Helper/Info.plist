@@ -12,7 +12,7 @@
     <string>1.0.0</string>
     <key>SMAuthorizedClients</key>
     <array>
-        <string>identifier "com.macusagemeter.MacUsageMeter" and anchor apple generic and certificate leaf[subject.CN] = "Developer ID Application: *"</string>
+        <string>identifier "com.macusagemeter.MacUsageMeter" and anchor apple generic and certificate leaf[subject.OU] = "$(DEVELOPMENT_TEAM)"</string>
     </array>
 </dict>
 </plist>
