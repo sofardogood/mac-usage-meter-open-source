@@ -13,6 +13,15 @@ extension Notification.Name {
 @main
 enum MacUsageMeterApp {
     static func main() {
+        // シングルインスタンスガード: 既に同じアプリが起動中なら即終了
+        let runningInstances = NSRunningApplication.runningApplications(
+            withBundleIdentifier: Bundle.main.bundleIdentifier ?? "com.macusagemeter.app"
+        )
+        if runningInstances.count > 1 {
+            // 自分より先に起動しているインスタンスがある
+            exit(0)
+        }
+
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
