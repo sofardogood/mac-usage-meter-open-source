@@ -17,6 +17,10 @@ import Shared
 
 let isLocalMode = CommandLine.arguments.contains("--local")
 
+if isLocalMode {
+    XPCPeerValidator.localMode = true
+}
+
 let delegate = HelperDelegate()
 
 let machServiceName = "com.macusagemeter.helper"

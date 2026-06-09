@@ -213,8 +213,10 @@ extension HelperDelegate: HelperProtocol {
         do {
             let result = try powerMetricsExecutor.execute(timeoutSec: timeoutSec)
 
-            // デバッグ生データ用
-            let rawCaptureId: String? = collectDebugRaw ? UUID().uuidString : nil
+            // デバッグ生データ用: クライアント要求 (collectDebugRaw) と
+            // サーバー側フラグ (debugCaptureEnabled) の両方が有効な場合のみ返す
+            let effectiveDebugRaw = collectDebugRaw && isDebugCaptureEnabled()
+            let rawCaptureId: String? = effectiveDebugRaw ? UUID().uuidString : nil
 
             if result.exitCode != 0 {
                 recordFailure(errorCode: "PWR-001")
@@ -267,9 +269,9 @@ extension HelperDelegate: HelperProtocol {
                 missingKeys: parseResult.missingKeys.isEmpty ? nil : parseResult.missingKeys,
                 rawCaptureId: rawCaptureId,
                 errorCode: parseResult.avgWatts == nil ? "PWR-003" : nil,
-                debugRawStdout: debugRaw(result.stdout, enabled: collectDebugRaw),
-                debugRawStderr: debugRaw(result.stderr, enabled: collectDebugRaw),
-                debugExitCode: collectDebugRaw ? result.exitCode : nil
+                debugRawStdout: debugRaw(result.stdout, enabled: effectiveDebugRaw),
+                debugRawStderr: debugRaw(result.stderr, enabled: effectiveDebugRaw),
+                debugExitCode: effectiveDebugRaw ? result.exitCode : nil
             )
 
             let resultStatus: XPCResponseEnvelope<PowerSampleResponse>.ResultStatus = parseResult.avgWatts != nil ? .ok : .partial
@@ -540,6 +542,13 @@ extension HelperDelegate: HelperProtocol {
         consecutiveFailures += 1
         lastErrorCode = errorCode
         stateLock.unlock()
+    }
+
+    private func isDebugCaptureEnabled() -> Bool {
+        stateLock.lock()
+        let enabled = debugCaptureEnabled
+        stateLock.unlock()
+        return enabled
     }
 
     private func setDebugCaptureEnabled(_ enabled: Bool) -> Bool {

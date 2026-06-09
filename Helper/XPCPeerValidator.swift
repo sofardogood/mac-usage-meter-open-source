@@ -15,6 +15,9 @@ struct XPCPeerValidator: Sendable {
     /// DEBUG ビルドでもデフォルトでは署名検証を迂回しない。
     private static let allowUnverifiedDebugPeersEnv = "MAC_USAGE_METER_ALLOW_UNVERIFIED_XPC"
 
+    /// --local モード (開発用) ではピア検証をスキップする
+    static var localMode: Bool = false
+
     // MARK: - Validation
 
     /// 接続元の peer を検証する。
@@ -24,12 +27,15 @@ struct XPCPeerValidator: Sendable {
     /// 3. signing identifier が authorizedClientIdentifier と一致するか確認
     /// 4. peer の Team ID が Helper 自身の Team ID と一致するか確認
     func validatePeer(_ connection: NSXPCConnection) -> Bool {
+        // --local モードでは開発用に全 peer を許可する (DEBUG ビルドのみ有効)
+        #if DEBUG
+        if Self.localMode {
+            return true
+        }
+        #endif
+
         guard let peer = signingInfo(for: connection) else {
-            #if DEBUG
             return Self.debugAllowsUnverifiedPeers
-            #else
-            return false
-            #endif
         }
 
         guard peer.identifier == Self.authorizedClientIdentifier else {
@@ -39,18 +45,18 @@ struct XPCPeerValidator: Sendable {
         guard let helperTeamIdentifier = Self.currentExecutableTeamIdentifier,
               let peerTeamIdentifier = peer.teamIdentifier,
               peerTeamIdentifier == helperTeamIdentifier else {
-            #if DEBUG
             return Self.debugAllowsUnverifiedPeers
-            #else
-            return false
-            #endif
         }
 
         return true
     }
 
     private static var debugAllowsUnverifiedPeers: Bool {
-        ProcessInfo.processInfo.environment[allowUnverifiedDebugPeersEnv] == "1"
+        #if DEBUG
+        return ProcessInfo.processInfo.environment[allowUnverifiedDebugPeersEnv] == "1"
+        #else
+        return false
+        #endif
     }
 
     /// 現在実行中の Helper 自身の Team ID。App と Helper が同一 Team で署名されていることを確認する。
