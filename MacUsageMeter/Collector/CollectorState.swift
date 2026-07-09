@@ -47,6 +47,10 @@ enum CollectorState: String, Codable, Sendable {
         case (.degraded, .sampleSuccess):
             return .normal
 
+        // normal/degraded → limited-ready: Helper 切断 / 権限拒否
+        case (.normal, .helperUnavailable), (.degraded, .helperUnavailable):
+            return .limitedReady
+
         // degraded → limited-ready: 10 連続失敗かつ profile 再検証で 0 件
         case (.degraded, .profileVerificationFailed):
             return .limitedReady

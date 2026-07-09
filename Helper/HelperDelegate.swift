@@ -55,6 +55,9 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate {
     /// 能力検出結果キャッシュ
     private var cachedProbeResult: CapabilityProbe.ProbeResult?
 
+    /// 能力検出結果キャッシュ時刻
+    private var cachedProbeResultAt: Date?
+
     /// Helper 内部状態の排他制御
     private let stateLock = NSLock()
 
@@ -69,6 +72,9 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate {
 
     /// XPC 応答に載せるデバッグ raw の上限。異常時にも IPC/DB を圧迫しないよう切り詰める。
     private static let debugRawCaptureMaxCharacters = 1_000_000
+
+    /// 空 profile の能力検出結果は一時的不調の可能性があるため短く再検証する
+    private static let emptyProbeCacheTTLSeconds: TimeInterval = 30
 
     // MARK: - NSXPCListenerDelegate
 
@@ -389,6 +395,8 @@ extension HelperDelegate: HelperProtocol {
     func reloadPrivilegeState(withReply reply: @escaping (Data) -> Void) {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
 
+        clearCachedProbeResult()
+
         // Helper は root で動作 → 権限は常に granted
         let response = PrivilegeStateResponse(
             privilegeState: "granted",
@@ -474,12 +482,24 @@ extension HelperDelegate: HelperProtocol {
         defer { capabilityLock.unlock() }
 
         if let cached = cachedProbeResult {
-            return cached
+            let cachedAt = cachedProbeResultAt ?? .distantPast
+            let cacheAge = Date().timeIntervalSince(cachedAt)
+            if !cached.profiles.isEmpty || cacheAge < Self.emptyProbeCacheTTLSeconds {
+                return cached
+            }
         }
 
         let probeResult = capabilityProbe.probe()
         cachedProbeResult = probeResult
+        cachedProbeResultAt = Date()
         return probeResult
+    }
+
+    private func clearCachedProbeResult() {
+        capabilityLock.lock()
+        cachedProbeResult = nil
+        cachedProbeResultAt = nil
+        capabilityLock.unlock()
     }
 
     private func debugRaw(_ value: String, enabled: Bool) -> String? {

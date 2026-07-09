@@ -15,7 +15,7 @@ struct PowerMetricsExecutor: Sendable {
     static let baseArguments = ["--sample-count", "1", "-f", "plist", "--samplers", "cpu_power"]
 
     /// デバッグキャプチャに記録するコマンド表現
-    static let commandDescription = "\(executablePath) --sample-count 1 --sample-rate 500 -f plist --samplers cpu_power,gpu_power,ane_power"
+    static let commandDescription = "\(executablePath) --sample-count 1 --sample-rate 500 -f plist --samplers cpu_power"
 
     // MARK: - Execution
 
@@ -31,7 +31,7 @@ struct PowerMetricsExecutor: Sendable {
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: Self.executablePath)
-        process.arguments = ["--sample-count", "1", "--sample-rate", "\(sampleRateMs)", "-f", "plist", "--samplers", "cpu_power,gpu_power,ane_power"]
+        process.arguments = ["--sample-count", "1", "--sample-rate", "\(sampleRateMs)", "-f", "plist", "--samplers", "cpu_power"]
         process.currentDirectoryURL = URL(fileURLWithPath: "/")
         process.environment = [:] // 環境変数は空
 

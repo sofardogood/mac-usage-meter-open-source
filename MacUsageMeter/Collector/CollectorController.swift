@@ -74,6 +74,15 @@ actor CollectorController {
     /// 当日ロールアップ定期更新タスク (60秒ごと)
     private var todayRollupTask: Task<Void, Never>?
 
+    /// Helper 復帰監視タスク
+    private var helperRecoveryTask: Task<Void, Never>?
+
+    /// Collector が起動中かどうか
+    private var isRunning: Bool = false
+
+    /// 当日ロールアップの最終実行時刻
+    private var lastTodayRollupAtMs: Int64?
+
     /// 能力検出結果
     private var capabilities: CapabilitiesResponse?
 
@@ -119,6 +128,9 @@ actor CollectorController {
     /// 4. タイマー開始 (Helper 不在時は Wi-Fi タイマーのみ)
     func start() async {
         Self.logger.info("Collector starting")
+
+        isRunning = true
+        configureXPCEventHandlers()
 
         // XPC 接続
         xpcClient.connect()
@@ -203,7 +215,11 @@ actor CollectorController {
     /// Collector を停止する
     func stop() async {
         Self.logger.info("Collector stopping")
+        isRunning = false
         stopTimers()
+        stopHelperRecoveryTask()
+        xpcClient.onInterruption = nil
+        xpcClient.onInvalidation = nil
         xpcClient.disconnect()
     }
 
@@ -250,10 +266,12 @@ actor CollectorController {
             )
 
             // DB 保存
+            var didSaveSample = false
             do {
                 try await flushCaches()
                 try databaseManager.insertPowerSample(sample)
                 try saveDebugCaptureIfPresent(response: response, capturedAtMs: now)
+                didSaveSample = true
             } catch {
                 Self.logger.error("Failed to save power sample: \(error.localizedDescription)")
                 cachePowerSample(sample)
@@ -275,6 +293,10 @@ actor CollectorController {
 
                 if state == .degraded {
                     await handleEvent(.sampleSuccess)
+                }
+
+                if didSaveSample {
+                    await performTodayRollupIfNeeded(minIntervalSec: 60)
                 }
             } else {
                 consecutiveFailureCount += 1
@@ -619,7 +641,7 @@ actor CollectorController {
         try databaseManager.insertDebugCapture(
             id: rawCaptureId,
             capturedAtMs: capturedAtMs,
-            command: "/usr/bin/powermetrics --sample-count 1 --sample-rate 500 -f plist --samplers cpu_power,gpu_power,ane_power",
+            command: "/usr/bin/powermetrics --sample-count 1 --sample-rate 500 -f plist --samplers cpu_power",
             rawStdout: response.debugRawStdout,
             rawStderr: response.debugRawStderr,
             exitCode: response.debugExitCode,
@@ -673,21 +695,40 @@ actor CollectorController {
     }
 
     private func startTimers() {
-        // 電力タスク
+        startPowerTimer()
+        startWifiTimer(collectImmediately: true)
+        startMaintenanceTimer()
+        startTodayRollupTask()
+    }
+
+    private func startPowerTimer() {
+        guard powerTask == nil else { return }
+
         powerTask = Task { [weak self] in
+            guard let self = self else { return }
+            await self.collectPowerSample()
             while !Task.isCancelled {
-                guard let self = self else { return }
                 let interval = await self.currentPowerInterval
                 try? await Task.sleep(for: .seconds(interval))
                 guard !Task.isCancelled else { return }
                 await self.collectPowerSample()
             }
         }
+    }
 
-        // Wi-Fi タスク (初回即実行)
+    private func stopPowerTimer() {
+        powerTask?.cancel()
+        powerTask = nil
+    }
+
+    private func startWifiTimer(collectImmediately: Bool) {
+        guard wifiTask == nil else { return }
+
         wifiTask = Task { [weak self] in
             guard let self = self else { return }
-            await self.collectWifiSnapshot()
+            if collectImmediately {
+                await self.collectWifiSnapshot()
+            }
             while !Task.isCancelled {
                 let interval = await self.wifiSamplingIntervalSec
                 try? await Task.sleep(for: .seconds(interval))
@@ -695,8 +736,11 @@ actor CollectorController {
                 await self.collectWifiSnapshot()
             }
         }
+    }
 
-        // メンテナンスタスク (1時間ごとにチェック、ロールアップ/パージの時刻判定は内部で行う)
+    private func startMaintenanceTimer() {
+        guard maintenanceTask == nil else { return }
+
         maintenanceTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(3600))
@@ -704,22 +748,17 @@ actor CollectorController {
                 await self.checkMaintenanceSchedule()
             }
         }
-
-        // 当日ロールアップ更新タスク (60秒ごと)
-        startTodayRollupTask()
     }
 
     /// 当日分のロールアップを60秒ごとに更新するタスクを開始する
     private func startTodayRollupTask() {
+        guard todayRollupTask == nil else { return }
+
         todayRollupTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(60))
                 guard !Task.isCancelled, let self = self else { return }
-                let formatter = DateFormatter()
-                formatter.dateFormat = "yyyy-MM-dd"
-                formatter.locale = Locale(identifier: "en_US_POSIX")
-                let todayStr = formatter.string(from: Date())
-                await self.performRollup(for: todayStr)
+                await self.performTodayRollup()
             }
         }
     }
@@ -737,26 +776,106 @@ actor CollectorController {
 
     /// Wi-Fi タスク + メンテナンスタスクを開始する (Helper 不在時用)
     private func startWifiAndMaintenanceTimers() {
-        wifiTask = Task { [weak self] in
+        startWifiTimer(collectImmediately: false)
+        startMaintenanceTimer()
+        startTodayRollupTask()
+        startHelperRecoveryTask()
+    }
+
+    private func performTodayRollup() async {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        await performRollup(for: formatter.string(from: Date()))
+        lastTodayRollupAtMs = Int64(Date().timeIntervalSince1970 * 1000)
+    }
+
+    private func performTodayRollupIfNeeded(minIntervalSec: Int) async {
+        let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
+        if let lastTodayRollupAtMs,
+           nowMs - lastTodayRollupAtMs < Int64(minIntervalSec) * 1000 {
+            return
+        }
+        await performTodayRollup()
+    }
+
+    private func configureXPCEventHandlers() {
+        xpcClient.onInterruption = { [weak self] in
+            Task { await self?.handleHelperConnectionLost() }
+        }
+        xpcClient.onInvalidation = { [weak self] in
+            Task { await self?.handleHelperConnectionLost() }
+        }
+    }
+
+    private func handleHelperConnectionLost() async {
+        guard isRunning else { return }
+        helperAvailable = false
+        activeProfileId = nil
+        stopPowerTimer()
+        await handleEvent(.helperUnavailable)
+        startHelperRecoveryTask()
+    }
+
+    private func startHelperRecoveryTask() {
+        guard isRunning else { return }
+        guard helperRecoveryTask == nil else { return }
+
+        helperRecoveryTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self = self else { return }
-                let interval = await self.wifiSamplingIntervalSec
-                try? await Task.sleep(for: .seconds(interval))
-                guard !Task.isCancelled else { return }
-                await self.collectWifiSnapshot()
+                if await self.tryRecoverHelperConnection() {
+                    return
+                }
+                try? await Task.sleep(for: .seconds(30))
             }
         }
+    }
 
-        maintenanceTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(3600))
-                guard !Task.isCancelled, let self = self else { return }
-                await self.checkMaintenanceSchedule()
+    private func stopHelperRecoveryTask() {
+        helperRecoveryTask?.cancel()
+        helperRecoveryTask = nil
+    }
+
+    private func tryRecoverHelperConnection() async -> Bool {
+        guard isRunning else { return true }
+        xpcClient.connect()
+
+        do {
+            let status = try await xpcClient.getServiceStatus()
+            guard status.privilegeState != .denied else {
+                helperAvailable = false
+                return false
             }
-        }
 
-        // 当日ロールアップ更新タスク (60秒ごと)
-        startTodayRollupTask()
+            let caps = try await xpcClient.getCapabilities()
+            let hasPowerProfile = caps.profiles.contains { $0.sourceLevel == "A" || $0.sourceLevel == "B" }
+            guard hasPowerProfile else {
+                capabilities = caps
+                helperAvailable = true
+                await handleEvent(.privilegeGranted)
+                await handleEvent(.capabilitiesLimited)
+                return false
+            }
+
+            capabilities = caps
+            activeProfileId = caps.profiles.first(where: { $0.sourceLevel == "A" })?.profileId
+                ?? caps.profiles.first(where: { $0.sourceLevel == "B" })?.profileId
+            helperAvailable = true
+            consecutiveFailureCount = 0
+            currentPowerInterval = powerSamplingIntervalSec
+
+            await handleEvent(.privilegeGranted)
+            await handleEvent(.capabilitiesReady)
+            stopHelperRecoveryTask()
+            startPowerTimer()
+            Self.logger.info("Helper recovered; power sampling restarted")
+            return true
+        } catch {
+            helperAvailable = false
+            Self.logger.warning("Helper recovery check failed: \(error.localizedDescription)")
+            return false
+        }
     }
 
     // MARK: - Stale Detection (M-007)

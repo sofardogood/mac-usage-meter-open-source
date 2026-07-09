@@ -111,11 +111,11 @@ final class CollectorStateTests: XCTestCase {
         XCTAssertNil(next)
     }
 
-    /// normal + helperUnavailable → nil
-    func test_normal_helperUnavailable_noTransition() {
+    /// normal + helperUnavailable → limited-ready
+    func test_normal_helperUnavailable_transitionsToLimitedReady() {
         let state = CollectorState.normal
         let next = state.transition(on: .helperUnavailable)
-        XCTAssertNil(next)
+        XCTAssertEqual(next, .limitedReady)
     }
 
     /// normal + sampleSuccess → nil (degraded でしか起きない)
@@ -188,11 +188,11 @@ final class CollectorStateTests: XCTestCase {
         XCTAssertNil(next)
     }
 
-    /// degraded + helperUnavailable → nil
-    func test_degraded_helperUnavailable_noTransition() {
+    /// degraded + helperUnavailable → limited-ready
+    func test_degraded_helperUnavailable_transitionsToLimitedReady() {
         let state = CollectorState.degraded
         let next = state.transition(on: .helperUnavailable)
-        XCTAssertNil(next)
+        XCTAssertEqual(next, .limitedReady)
     }
 
     // MARK: - Raw Value Encoding
