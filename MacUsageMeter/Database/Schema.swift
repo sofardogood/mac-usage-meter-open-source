@@ -110,4 +110,6 @@ enum Schema {
 
     /// debug_captures テーブル名
     static let debugCapturesTable = "debug_captures"
+
+    static let attributedUsageTable = "attributed_usage"
 }

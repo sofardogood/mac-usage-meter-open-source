@@ -54,6 +54,7 @@ final class MigrationRunnerTests: XCTestCase {
         XCTAssertTrue(tables.contains("audit_events"))
         XCTAssertTrue(tables.contains("maintenance_log"))
         XCTAssertTrue(tables.contains("debug_captures"))
+        XCTAssertTrue(tables.contains("attributed_usage"))
     }
 
     /// 既に最新の場合はマイグレーションをスキップ
@@ -78,7 +79,7 @@ final class MigrationRunnerTests: XCTestCase {
         try runner.runMigrations(dbPath: dbPath)
 
         let version = try runner.getCurrentVersion(dbPath: dbPath)
-        XCTAssertEqual(version, 1, "user_version should be 1 after initial migration")
+        XCTAssertEqual(version, MigrationRunner.targetVersion, "user_version should be current after migration")
     }
 
     // MARK: - Backup
@@ -225,9 +226,9 @@ final class MigrationRunnerTests: XCTestCase {
         XCTAssertEqual(sql, Schema.initialDDL)
     }
 
-    /// targetVersion が 1 であること
-    func test_targetVersion_isOne() {
-        XCTAssertEqual(MigrationRunner.targetVersion, 1)
+    /// targetVersion が利用先別通信量を含む version 2 であること
+    func test_targetVersion_isTwo() {
+        XCTAssertEqual(MigrationRunner.targetVersion, 2)
     }
 
     // MARK: - In-Memory DB Tests

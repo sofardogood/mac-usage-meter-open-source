@@ -41,6 +41,12 @@ final class DetailViewModel: ObservableObject {
     /// Wi-Fi 合計使用量 (表示用文字列)
     @Published var totalWifiUsageText: String = "0 B"
 
+    /// Network Extension が観測した利用先別の通信量集計。
+    @Published var usageDestinationSummaries: [UsageDestinationSummary] = []
+
+    /// 利用先別の合計通信量（表示用）。
+    @Published var attributedUsageTotalBytes: Int64 = 0
+
     /// CSV エクスポート: 種別
     @Published var exportType: CSVExporter.ExportType = .rawPower
 
@@ -84,6 +90,33 @@ final class DetailViewModel: ObservableObject {
             loadRawData(period: period, calendar: calendar, now: now)
         case .sevenDays, .thirtyDays, .ninetyDays:
             loadRollupData(period: period, calendar: calendar, now: now)
+        }
+    }
+
+    /// 指定期間のサイト・アプリ別使用量を読み込む。
+    func loadUsageBreakdown(for period: DetailView.Period) {
+        let now = Date()
+        let calendar = Calendar.current
+        let hoursBack: Int
+        switch period {
+        case .oneHour: hoursBack = 1
+        case .twentyFourHours: hoursBack = 24
+        case .sevenDays: hoursBack = 24 * 7
+        case .thirtyDays: hoursBack = 24 * 30
+        case .ninetyDays: hoursBack = 24 * 90
+        }
+        let from = calendar.date(byAdding: .hour, value: -hoursBack, to: now) ?? now
+
+        do {
+            let values = try databaseManager.fetchUsageDestinationSummaries(
+                fromMs: Int64(from.timeIntervalSince1970 * 1000),
+                toMs: Int64(now.timeIntervalSince1970 * 1000)
+            )
+            usageDestinationSummaries = values
+            attributedUsageTotalBytes = values.reduce(0) { $0 + $1.totalBytes }
+        } catch {
+            usageDestinationSummaries = []
+            attributedUsageTotalBytes = 0
         }
     }
 

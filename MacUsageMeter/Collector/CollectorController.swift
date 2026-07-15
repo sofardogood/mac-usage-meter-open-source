@@ -44,6 +44,9 @@ actor CollectorController {
     /// Wi-Fi サンプルのメモリキャッシュ (DB書込み失敗時の退避用、上限1000件)
     private var wifiSampleCache: [WifiSample] = []
 
+    /// `nettop` の接続別累積カウンタ。アプリ・宛先別の差分計算に使う。
+    private var previousAttributedFlows: [String: ProcessNetworkUsageReader.Flow] = [:]
+
     /// 前回の Wi-Fi カウンタ (差分計算用)
     private var previousWifiSnapshot: WifiSnapshotResponse?
 
@@ -67,6 +70,8 @@ actor CollectorController {
 
     /// Wi-Fi 採取タスク
     private var wifiTask: Task<Void, Never>?
+
+    private var attributedUsageTask: Task<Void, Never>?
 
     /// ロールアップ・パージタスク
     private var maintenanceTask: Task<Void, Never>?
@@ -697,6 +702,7 @@ actor CollectorController {
     private func startTimers() {
         startPowerTimer()
         startWifiTimer(collectImmediately: true)
+        startAttributedUsageTimer()
         startMaintenanceTimer()
         startTodayRollupTask()
     }
@@ -750,6 +756,46 @@ actor CollectorController {
         }
     }
 
+    /// アプリ・接続先別の通信量を低頻度で採取する。`nettop` はスナップショットの
+    /// 累積カウンタを返すため、前回値との差分だけを保存する。
+    private func startAttributedUsageTimer() {
+        guard attributedUsageTask == nil else { return }
+        attributedUsageTask = Task { [weak self] in
+            guard let self else { return }
+            await self.collectAttributedUsage()
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(15))
+                guard !Task.isCancelled else { return }
+                await self.collectAttributedUsage()
+            }
+        }
+    }
+
+    private func collectAttributedUsage() {
+        let flows = (try? ProcessNetworkUsageReader().readFlows()) ?? []
+        let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
+        let totalDelta = flows.reduce(Int64(0)) { partial, flow in
+            guard let previous = previousAttributedFlows[flow.key] else { return partial }
+            return partial + max(0, flow.receivedBytesTotal - previous.receivedBytesTotal)
+                + max(0, flow.sentBytesTotal - previous.sentBytesTotal)
+        }
+        let currentWatts = latestPowerSample?.avgWatts
+
+        for flow in flows {
+            guard let previous = previousAttributedFlows[flow.key] else { continue }
+            let received = max(0, flow.receivedBytesTotal - previous.receivedBytesTotal)
+            let sent = max(0, flow.sentBytesTotal - previous.sentBytesTotal)
+            guard received + sent > 0 else { continue }
+            let estimatedWatts = currentWatts.map { $0 * Double(received + sent) / Double(max(totalDelta, 1)) }
+            try? databaseManager.insertAttributedUsage(AttributedUsage(
+                id: nil, capturedAtMs: nowMs, applicationName: flow.applicationName,
+                bundleIdentifier: nil, destinationHost: flow.destinationHost,
+                sentBytes: sent, receivedBytes: received, estimatedWatts: estimatedWatts
+            ))
+        }
+        previousAttributedFlows = Dictionary(uniqueKeysWithValues: flows.map { ($0.key, $0) })
+    }
+
     /// 当日分のロールアップを60秒ごとに更新するタスクを開始する
     private func startTodayRollupTask() {
         guard todayRollupTask == nil else { return }
@@ -768,6 +814,8 @@ actor CollectorController {
         powerTask = nil
         wifiTask?.cancel()
         wifiTask = nil
+        attributedUsageTask?.cancel()
+        attributedUsageTask = nil
         maintenanceTask?.cancel()
         maintenanceTask = nil
         todayRollupTask?.cancel()
@@ -777,6 +825,7 @@ actor CollectorController {
     /// Wi-Fi タスク + メンテナンスタスクを開始する (Helper 不在時用)
     private func startWifiAndMaintenanceTimers() {
         startWifiTimer(collectImmediately: false)
+        startAttributedUsageTimer()
         startMaintenanceTimer()
         startTodayRollupTask()
         startHelperRecoveryTask()

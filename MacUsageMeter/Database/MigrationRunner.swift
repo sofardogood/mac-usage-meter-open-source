@@ -10,7 +10,7 @@ import os.log
 struct MigrationRunner: Sendable {
 
     /// 現在のコードが期待するスキーマバージョン
-    static let targetVersion: Int32 = 1
+    static let targetVersion: Int32 = 2
 
     /// ロガー
     private static let logger = Logger(subsystem: "com.macusagemeter", category: "MigrationRunner")
@@ -129,7 +129,8 @@ struct MigrationRunner: Sendable {
         let fm = FileManager.default
 
         for path in [backupPath, backupPath + "-wal", backupPath + "-shm"] where fm.fileExists(atPath: path) {
-            try fm.removeItem(atPath: path)
+            // WAL の自動チェックポイントとの競合で既に消えていることがある。
+            try? fm.removeItem(atPath: path)
         }
 
         var backupDB: OpaquePointer?
@@ -271,6 +272,21 @@ struct MigrationRunner: Sendable {
         switch version {
         case 1:
             return Schema.initialDDL
+        case 2:
+            return """
+            CREATE TABLE attributed_usage (
+              id                INTEGER PRIMARY KEY AUTOINCREMENT,
+              captured_at_ms    INTEGER NOT NULL,
+              application_name  TEXT    NOT NULL,
+              bundle_identifier TEXT    NULL,
+              destination_host  TEXT    NULL,
+              sent_bytes        INTEGER NOT NULL DEFAULT 0 CHECK(sent_bytes >= 0),
+              received_bytes    INTEGER NOT NULL DEFAULT 0 CHECK(received_bytes >= 0),
+              estimated_watts   REAL    NULL
+            );
+            CREATE INDEX idx_attributed_usage_captured_at ON attributed_usage(captured_at_ms);
+            CREATE INDEX idx_attributed_usage_destination ON attributed_usage(application_name, destination_host);
+            """
         default:
             preconditionFailure("Unknown migration version: \(version)")
         }

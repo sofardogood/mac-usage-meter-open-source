@@ -16,7 +16,7 @@ final class DatabaseManager: @unchecked Sendable {
     let dbPath: String
 
     /// 現在のスキーマバージョン (PRAGMA user_version)
-    static let currentSchemaVersion: Int32 = 1
+    static let currentSchemaVersion: Int32 = 2
 
     /// SQLite DB ハンドル
     private var db: OpaquePointer?
@@ -283,6 +283,57 @@ final class DatabaseManager: @unchecked Sendable {
             return sqlite3_column_int64(stmt, 0)
         }
         return 0
+    }
+
+    // MARK: - Attributed Usage
+
+    /// Network Extension が観測したアプリ・宛先別の通信量を保存する。
+    func insertAttributedUsage(_ usage: AttributedUsage) throws {
+        guard !isReadOnly else { throw DatabaseError.readOnlyMode }
+        lock.lock()
+        defer { lock.unlock() }
+
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        let rc = sqlite3_prepare_v2(db, AttributedUsageQueries.insert, -1, &stmt, nil)
+        guard rc == SQLITE_OK else { throw dbError("prepare insertAttributedUsage") }
+
+        sqlite3_bind_int64(stmt, 1, usage.capturedAtMs)
+        sqlite3_bind_text(stmt, 2, (usage.applicationName as NSString).utf8String, -1, SQLITE_TRANSIENT_VALUE)
+        bindOptionalText(stmt, index: 3, value: usage.bundleIdentifier)
+        bindOptionalText(stmt, index: 4, value: usage.destinationHost)
+        sqlite3_bind_int64(stmt, 5, usage.sentBytes)
+        sqlite3_bind_int64(stmt, 6, usage.receivedBytes)
+        bindOptionalDouble(stmt, index: 7, value: usage.estimatedWatts)
+
+        guard sqlite3_step(stmt) == SQLITE_DONE else { throw dbError("step insertAttributedUsage") }
+    }
+
+    /// 指定期間のアプリ・宛先別通信量を、使用量の多い順で取得する。
+    func fetchUsageDestinationSummaries(fromMs: Int64, toMs: Int64) throws -> [UsageDestinationSummary] {
+        lock.lock()
+        defer { lock.unlock() }
+
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        let rc = sqlite3_prepare_v2(db, AttributedUsageQueries.summaryByDestination, -1, &stmt, nil)
+        guard rc == SQLITE_OK else { throw dbError("prepare fetchUsageDestinationSummaries") }
+
+        sqlite3_bind_int64(stmt, 1, fromMs)
+        sqlite3_bind_int64(stmt, 2, toMs)
+
+        var summaries: [UsageDestinationSummary] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let watts: Double? = sqlite3_column_type(stmt, 4) == SQLITE_NULL ? nil : sqlite3_column_double(stmt, 4)
+            summaries.append(UsageDestinationSummary(
+                applicationName: columnText(stmt, 0),
+                bundleIdentifier: sqlite3_column_type(stmt, 1) == SQLITE_NULL ? nil : columnText(stmt, 1),
+                destinationHost: sqlite3_column_type(stmt, 2) == SQLITE_NULL ? nil : columnText(stmt, 2),
+                totalBytes: sqlite3_column_int64(stmt, 3),
+                estimatedWatts: watts
+            ))
+        }
+        return summaries
     }
 
     // MARK: - Daily Rollups
@@ -639,6 +690,7 @@ final class DatabaseManager: @unchecked Sendable {
         totalDeleted += try executePurge(PowerSampleQueries.purge, bindings: [.int64(sampleCutoff)])
         // wifi_samples
         totalDeleted += try executePurge(WifiSampleQueries.purge, bindings: [.int64(sampleCutoff)])
+        totalDeleted += try executePurge(AttributedUsageQueries.purge, bindings: [.int64(sampleCutoff)])
         // daily_rollups
         totalDeleted += try executePurge(DailyRollupQueries.purge, bindings: [.text(rollupCutoff)])
         // audit_events (2つのバインド: 通常 180日、error 365日)
