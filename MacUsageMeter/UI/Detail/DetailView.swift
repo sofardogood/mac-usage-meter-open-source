@@ -11,11 +11,11 @@ struct DetailView: View {
 
     /// 表示期間
     enum Period: String, CaseIterable, Sendable {
-        case oneHour = "1時間"
-        case twentyFourHours = "24時間"
-        case sevenDays = "7日"
-        case thirtyDays = "30日"
-        case ninetyDays = "90日"
+        case oneHour = "1 Hour"
+        case twentyFourHours = "24 Hours"
+        case sevenDays = "7 Days"
+        case thirtyDays = "30 Days"
+        case ninetyDays = "90 Days"
     }
 
     /// 選択中の表示期間
@@ -25,7 +25,7 @@ struct DetailView: View {
     @State private var selectedTab: Tab = .usage
 
     enum Tab: String, CaseIterable {
-        case usage = "利用先別"
+        case usage = "By Destination"
         case history = "History"
         case export = "Export"
     }
@@ -79,7 +79,7 @@ struct DetailView: View {
 
             if viewModel.isLoading {
                 Spacer()
-                ProgressView("データを読み込み中...")
+                ProgressView("Loading data...")
                 Spacer()
             } else {
                 ScrollView {
@@ -106,13 +106,13 @@ struct DetailView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Label("利用先別の通信量", systemImage: "network")
+                    Label("Traffic by Destination", systemImage: "network")
                         .font(.headline)
                     Spacer()
                     Text(PopoverViewModel.formatBytes(viewModel.attributedUsageTotalBytes))
                         .font(.headline.monospacedDigit())
                 }
-                Text("通信量は実測値。電力は Mac 全体の実測値を活動量で配分した推定値です。")
+                Text("Traffic is measured. Power is estimated by allocating the Mac-wide measured value by activity.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -124,9 +124,9 @@ struct DetailView: View {
                     Image(systemName: "lock.shield")
                         .font(.largeTitle)
                         .foregroundColor(.secondary)
-                    Text("利用先別のデータはまだありません")
+                    Text("No destination data yet")
                         .font(.headline)
-                    Text("記録はアプリ起動後から開始されます。既存の Wi‑Fi 合計値は遡ってサイト・アプリ別に分類できません。")
+                    Text("Tracking starts after the app launches. Existing Wi-Fi totals cannot be classified retroactively.")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
@@ -141,7 +141,7 @@ struct DetailView: View {
 
                         Divider()
 
-                        Text("利用先一覧")
+                        Text("Destinations")
                             .font(.headline)
                         ForEach(viewModel.usageDestinationSummaries) { summary in
                             usageSummaryRow(summary)
@@ -156,7 +156,7 @@ struct DetailView: View {
     private func usageCharts() -> some View {
         let summaries = Array(viewModel.usageDestinationSummaries.prefix(8))
         return VStack(alignment: .leading, spacing: 12) {
-            Text("通信量の内訳（上位8件）")
+            Text("Traffic breakdown (Top 8)")
                 .font(.headline)
 
             HStack(alignment: .top, spacing: 20) {
@@ -179,12 +179,12 @@ struct DetailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            Text("通信量の比較（上位8件）")
+            Text("Traffic comparison (Top 8)")
                 .font(.headline)
             Chart(summaries) { summary in
                 BarMark(
-                    x: .value("利用先", summary.applicationName),
-                    y: .value("通信量 (GB)", Double(summary.totalBytes) / 1_000_000_000)
+                    x: .value("Destination", summary.applicationName),
+                    y: .value("Traffic (GB)", Double(summary.totalBytes) / 1_000_000_000)
                 )
                 .foregroundStyle(Color.accentColor.gradient)
                 .annotation(position: .top) {
@@ -212,7 +212,7 @@ struct DetailView: View {
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
                 Text(PopoverViewModel.formatBytes(summary.totalBytes)).font(.body.monospacedDigit())
-                Text(summary.estimatedWatts.map { "推定 \(String(format: "%.1f", $0)) W" } ?? "電力データなし")
+                Text(summary.estimatedWatts.map { "Estimated \(String(format: "%.1f", $0)) W" } ?? "No power data")
                     .font(.caption).foregroundColor(.secondary)
             }
         }
@@ -223,30 +223,30 @@ struct DetailView: View {
 
     /// 期間セレクタ
     private func periodSelector() -> some View {
-        Picker("表示期間", selection: $selectedPeriod) {
+        Picker("Period", selection: $selectedPeriod) {
             ForEach(Period.allCases, id: \.self) { period in
                 Text(period.rawValue).tag(period)
             }
         }
         .pickerStyle(.segmented)
         .padding(.horizontal)
-        .accessibilityLabel("表示期間の選択、現在\(selectedPeriod.rawValue)")
+        .accessibilityLabel("Period selection, currently \(selectedPeriod.rawValue)")
     }
 
     /// 電力グラフ
     private func powerChart() -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("電力")
+                Text("Power")
                     .font(.headline)
                 Spacer()
                 if let avg = viewModel.averagePowerWatts {
-                    Text("平均: \(String(format: "%.1f", avg)) W")
+                    Text("Average: \(String(format: "%.1f", avg)) W")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
                 if let max = viewModel.maxPowerWatts {
-                    Text("最大: \(String(format: "%.1f", max)) W")
+                    Text("Maximum: \(String(format: "%.1f", max)) W")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
@@ -255,12 +255,12 @@ struct DetailView: View {
             if isRawPeriod {
                 // 折れ線グラフ (1時間/24時間)
                 if viewModel.powerSamples.isEmpty {
-                    emptyChartPlaceholder("電力データがありません")
+                    emptyChartPlaceholder("No power data")
                 } else {
                     Chart(viewModel.powerSamples.filter { $0.avgWatts != nil }) { sample in
                         LineMark(
-                            x: .value("時刻", Date(timeIntervalSince1970: Double(sample.capturedAtMs) / 1000.0)),
-                            y: .value("電力 (W)", sample.avgWatts ?? 0)
+                            x: .value("Time", Date(timeIntervalSince1970: Double(sample.capturedAtMs) / 1000.0)),
+                            y: .value("Power (W)", sample.avgWatts ?? 0)
                         )
                         .foregroundStyle(Color.blue.gradient)
                         .interpolationMethod(.catmullRom)
@@ -279,12 +279,12 @@ struct DetailView: View {
             } else {
                 // 棒グラフ (7日/30日/90日)
                 if viewModel.dailyRollups.isEmpty {
-                    emptyChartPlaceholder("電力データがありません")
+                    emptyChartPlaceholder("No power data")
                 } else {
                     Chart(viewModel.dailyRollups) { rollup in
                         BarMark(
-                            x: .value("日付", rollup.dateLocal),
-                            y: .value("電力量 (kWh)", rollup.powerKwh ?? 0)
+                            x: .value("Date", rollup.dateLocal),
+                            y: .value("Energy (kWh)", rollup.powerKwh ?? 0)
                         )
                         .foregroundStyle(Color.blue.gradient)
                     }
@@ -309,10 +309,10 @@ struct DetailView: View {
     private func wifiChart() -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Wi-Fi 使用量")
+                Text("Wi-Fi Usage")
                     .font(.headline)
                 Spacer()
-                Text("合計: \(viewModel.totalWifiUsageText)")
+                Text("Total: \(viewModel.totalWifiUsageText)")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
             }
@@ -320,24 +320,24 @@ struct DetailView: View {
             if isRawPeriod {
                 // 積み上げ棒グラフ (24時間)
                 if viewModel.wifiSamples.isEmpty {
-                    emptyChartPlaceholder("Wi-Fi データがありません")
+                    emptyChartPlaceholder("No Wi-Fi data")
                 } else {
                     Chart(viewModel.wifiSamples) { sample in
                         BarMark(
-                            x: .value("時刻", Date(timeIntervalSince1970: Double(sample.capturedAtMs) / 1000.0)),
-                            y: .value("送信 (KB)", Double(sample.sentBytesDelta) / 1000.0)
+                            x: .value("Time", Date(timeIntervalSince1970: Double(sample.capturedAtMs) / 1000.0)),
+                            y: .value("Sent (KB)", Double(sample.sentBytesDelta) / 1000.0)
                         )
-                        .foregroundStyle(by: .value("種別", "送信"))
+                        .foregroundStyle(by: .value("Type", "Sent"))
 
                         BarMark(
-                            x: .value("時刻", Date(timeIntervalSince1970: Double(sample.capturedAtMs) / 1000.0)),
-                            y: .value("受信 (KB)", Double(sample.recvBytesDelta) / 1000.0)
+                            x: .value("Time", Date(timeIntervalSince1970: Double(sample.capturedAtMs) / 1000.0)),
+                            y: .value("Received (KB)", Double(sample.recvBytesDelta) / 1000.0)
                         )
-                        .foregroundStyle(by: .value("種別", "受信"))
+                        .foregroundStyle(by: .value("Type", "Received"))
                     }
                     .chartForegroundStyleScale([
-                        "送信": Color.orange,
-                        "受信": Color.green
+                        "Sent": Color.orange,
+                        "Received": Color.green
                     ])
                     .chartXAxis {
                         AxisMarks(values: .automatic(desiredCount: 6)) { value in
@@ -353,12 +353,12 @@ struct DetailView: View {
             } else {
                 // 棒グラフ (7日/30日/90日)
                 if viewModel.dailyRollups.isEmpty {
-                    emptyChartPlaceholder("Wi-Fi データがありません")
+                    emptyChartPlaceholder("No Wi-Fi data")
                 } else {
                     Chart(viewModel.dailyRollups) { rollup in
                         BarMark(
-                            x: .value("日付", rollup.dateLocal),
-                            y: .value("使用量 (GB)", rollup.wifiGb ?? 0)
+                            x: .value("Date", rollup.dateLocal),
+                            y: .value("Usage (GB)", rollup.wifiGb ?? 0)
                         )
                         .foregroundStyle(Color.green.gradient)
                     }
@@ -375,7 +375,7 @@ struct DetailView: View {
                 }
             }
 
-            Text("LAN 通信を含む参考値です")
+            Text("Reference value; includes LAN traffic")
                 .font(.caption2)
                 .foregroundColor(.secondary)
         }
@@ -387,29 +387,29 @@ struct DetailView: View {
 
     private func exportTab() -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("CSV エクスポート")
+            Text("CSV Export")
                 .font(.headline)
                 .padding(.horizontal)
 
             VStack(alignment: .leading, spacing: 14) {
-                exportField(label: "出力種別") {
-                    Picker("出力種別", selection: $viewModel.exportType) {
-                        Text("電力サンプル (raw)").tag(CSVExporter.ExportType.rawPower)
-                        Text("Wi-Fi サンプル (raw)").tag(CSVExporter.ExportType.rawWifi)
-                        Text("日次ロールアップ").tag(CSVExporter.ExportType.dailyRollup)
+                exportField(label: "Export type") {
+                    Picker("Export type", selection: $viewModel.exportType) {
+                        Text("Power samples (raw)").tag(CSVExporter.ExportType.rawPower)
+                        Text("Wi-Fi samples (raw)").tag(CSVExporter.ExportType.rawWifi)
+                        Text("Daily rollups").tag(CSVExporter.ExportType.dailyRollup)
                     }
                     .labelsHidden()
                     .frame(width: 240, alignment: .leading)
                 }
 
-                exportField(label: "開始日") {
-                    DatePicker("開始日", selection: $viewModel.exportDateFrom, displayedComponents: .date)
+                exportField(label: "Start date") {
+                    DatePicker("Start date", selection: $viewModel.exportDateFrom, displayedComponents: .date)
                         .labelsHidden()
                         .frame(width: 180, alignment: .leading)
                 }
 
-                exportField(label: "終了日") {
-                    DatePicker("終了日", selection: $viewModel.exportDateTo, displayedComponents: .date)
+                exportField(label: "End date") {
+                    DatePicker("End date", selection: $viewModel.exportDateTo, displayedComponents: .date)
                         .labelsHidden()
                         .frame(width: 180, alignment: .leading)
                 }
@@ -417,7 +417,7 @@ struct DetailView: View {
                 HStack {
                     Spacer()
                     Button(action: { viewModel.exportCSV() }) {
-                        Label("CSV ファイルに書き出す", systemImage: "square.and.arrow.up")
+                        Label("Export CSV", systemImage: "square.and.arrow.up")
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(viewModel.isExporting)
@@ -446,7 +446,7 @@ struct DetailView: View {
 
             Spacer()
 
-            Text("出力形式: UTF-8 (BOM 付き)、CRLF 改行、ヘッダー行あり")
+            Text("UTF-8 with BOM, CRLF line endings, and a header row")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .padding(.horizontal)
@@ -488,12 +488,12 @@ struct DetailView: View {
     }
 
     private var powerChartAccessibilityLabel: String {
-        var parts = ["\(selectedPeriod.rawValue)の電力推移グラフ"]
+        var parts = ["Power chart for \(selectedPeriod.rawValue)"]
         if let avg = viewModel.averagePowerWatts {
-            parts.append("平均\(String(format: "%.1f", avg))ワット")
+            parts.append("average \(String(format: "%.1f", avg)) watts")
         }
         if let max = viewModel.maxPowerWatts {
-            parts.append("最大\(String(format: "%.1f", max))ワット")
+            parts.append("maximum \(String(format: "%.1f", max)) watts")
         }
         return parts.joined(separator: "、")
     }
@@ -523,7 +523,7 @@ private struct UsagePieChart: View {
                 }
                 Circle().fill(Color(NSColor.windowBackgroundColor)).frame(width: radius * 1.05, height: radius * 1.05)
                 VStack(spacing: 2) {
-                    Text("合計").font(.caption).foregroundColor(.secondary)
+                    Text("Total").font(.caption).foregroundColor(.secondary)
                     Text(PopoverViewModel.formatBytes(total)).font(.caption.bold().monospacedDigit())
                 }
             }

@@ -76,23 +76,23 @@ enum StateCode: String, Codable, CaseIterable, Sendable {
     var userMessage: String {
         switch self {
         case .authNotGranted:
-            return "電力計測に必要な権限が未付与です"
+            return "Permission required for power measurement has not been granted"
         case .helperNotRegistered:
-            return "計測ヘルパーを開始できません"
+            return "The measurement helper could not be started"
         case .powerMetricsUnsupported:
-            return "この環境では電力値を取得できません"
+            return "Power readings are unavailable in this environment"
         case .initialDataPending:
-            return "最新データを取得中です"
+            return "Fetching the latest data"
         case .powerDataFailure:
-            return "電力データの取得または解析に失敗しました"
+            return "Failed to collect or parse power data"
         case .wifiInterfaceUnknown:
-            return "Wi-Fi インターフェースを特定できません"
+            return "The Wi-Fi interface could not be identified"
         case .staleContinued:
-            return "データが古くなっています。表示値は参考値です"
+            return "Data is stale; displayed values are for reference only"
         case .databaseFailure:
-            return "保存領域にアクセスできません"
+            return "The data storage location is unavailable"
         case .wifiDisconnected:
-            return "Wi-Fi が接続されていません"
+            return "Wi-Fi is not connected"
         }
     }
 
@@ -100,23 +100,23 @@ enum StateCode: String, Codable, CaseIterable, Sendable {
     var primaryAction: String {
         switch self {
         case .authNotGranted:
-            return "セットアップを再開"
+            return "Restart setup"
         case .helperNotRegistered:
-            return "登録を再試行"
+            return "Retry registration"
         case .powerMetricsUnsupported:
-            return "ヘルプを開く"
+            return "Open help"
         case .initialDataPending:
-            return "自動更新待ち"
+            return "Waiting for automatic update"
         case .powerDataFailure:
-            return "再試行 / 診断表示"
+            return "Retry / View diagnostics"
         case .wifiInterfaceUnknown:
-            return "ネットワーク状態を確認"
+            return "Check network status"
         case .staleContinued:
-            return "再試行"
+            return "Retry"
         case .databaseFailure:
-            return "保存先を確認 / 再起動"
+            return "Check storage / Restart"
         case .wifiDisconnected:
-            return "ネットワーク設定を開く"
+            return "Open network settings"
         }
     }
 

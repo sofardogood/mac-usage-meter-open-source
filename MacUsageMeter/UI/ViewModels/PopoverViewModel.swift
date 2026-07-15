@@ -286,7 +286,7 @@ final class PopoverViewModel: ObservableObject {
 
     /// 概算電気代を表示用にフォーマットする
     func formatCostYen(_ value: Double?) -> String {
-        guard let value = value else { return "未計算" }
+        guard let value = value else { return "Not calculated" }
         if value < 1 {
             return String(format: "%.4f 円", value)
         } else if value < 100 {
@@ -373,15 +373,15 @@ final class PopoverViewModel: ObservableObject {
     private func updateStatusMessage(state: CollectorState) {
         switch state {
         case .normal:
-            statusMessage = "正常"
+            statusMessage = "Normal"
         case .starting:
-            statusMessage = "起動中..."
+            statusMessage = "Starting..."
         case .degraded:
-            statusMessage = "一部のデータが取得できていません"
+            statusMessage = "Some data is unavailable"
         case .limitedReady:
-            statusMessage = "Wi-Fi のみ計測中（電力は取得できません）"
+            statusMessage = "Measuring Wi-Fi only (power is unavailable)"
         case .notReady:
-            statusMessage = "計測の準備ができていません"
+            statusMessage = "Measurement is not ready"
         }
     }
 }

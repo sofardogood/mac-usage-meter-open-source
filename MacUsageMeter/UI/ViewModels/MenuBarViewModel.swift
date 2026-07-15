@@ -87,7 +87,7 @@ final class MenuBarViewModel: ObservableObject {
             updateButton(button, image: Self.boltIcon, title: Self.boltIcon == nil ? "⚡ \(wattsStr) / \(wifiText)" : " \(wattsStr) / \(wifiText)")
 
         case .error:
-            updateButton(button, image: Self.warnIcon, title: Self.warnIcon == nil ? "⚠ 要確認" : " 要確認")
+            updateButton(button, image: Self.warnIcon, title: Self.warnIcon == nil ? "⚠ Check" : " Check")
 
         case .compact:
             updateButton(button, image: Self.boltIcon, title: Self.boltIcon == nil ? "⚡" : "")
@@ -135,6 +135,6 @@ final class MenuBarViewModel: ObservableObject {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss"
         let timeStr = formatter.string(from: Date())
-        return "最終更新: \(timeStr)"
+        return "Last updated: \(timeStr)"
     }
 }

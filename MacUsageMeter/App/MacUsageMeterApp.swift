@@ -89,7 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } catch {
             setupStatusItem()
             startStatusItemVisibilityWatchdog()
-            statusItem?.button?.title = " 要確認"
+            statusItem?.button?.title = " Check"
             return
         }
 
@@ -326,7 +326,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 600),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.title = "Mac Usage Meter - セットアップ"
+        window.title = "Mac Usage Meter - Setup"
         window.contentView = NSHostingView(rootView: view)
         window.center()
         window.makeKeyAndOrderFront(nil)
@@ -352,7 +352,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             presentingWindowProvider: { [weak window] in window }
         )
         let view = DetailView(viewModel: viewModel)
-        window.title = "Mac Usage Meter - 詳細"
+        window.title = "Mac Usage Meter - Details"
         window.contentView = NSHostingView(rootView: view)
         window.center()
         detailWindow = window
@@ -386,7 +386,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 450, height: 500),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.title = "Mac Usage Meter - エラー状態"
+        window.title = "Mac Usage Meter - Error Status"
         window.contentView = NSHostingView(rootView: view)
         window.center()
         window.makeKeyAndOrderFront(nil)
@@ -408,7 +408,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let view = SettingsView(viewModel: vm)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 500),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.title = "Mac Usage Meter - 設定"
+        window.title = "Mac Usage Meter - Settings"
         window.contentView = NSHostingView(rootView: view)
         window.center()
         settingsWindow = window
