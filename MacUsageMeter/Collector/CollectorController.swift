@@ -793,7 +793,14 @@ actor CollectorController {
                 sentBytes: sent, receivedBytes: received, estimatedWatts: estimatedWatts
             ))
         }
-        previousAttributedFlows = Dictionary(uniqueKeysWithValues: flows.map { ($0.key, $0) })
+        // `nettop` can report multiple identical flow labels. Never use
+        // Dictionary(uniqueKeysWithValues:) here: it traps on a duplicate and
+        // would terminate the app during its first collection cycle.
+        var nextFlows: [String: ProcessNetworkUsageReader.Flow] = [:]
+        for flow in flows {
+            nextFlows[flow.key] = flow
+        }
+        previousAttributedFlows = nextFlows
     }
 
     /// 当日分のロールアップを60秒ごとに更新するタスクを開始する
