@@ -163,9 +163,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let item: NSStatusItem
         if let existingItem = statusItem {
             item = existingItem
-            item.length = NSStatusItem.variableLength
+            item.length = 32
         } else {
-            item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+            // Reserve space immediately so an asynchronous first refresh cannot
+            // leave the menu bar item with a zero-width, invisible button.
+            item = NSStatusBar.system.statusItem(withLength: 32)
             statusItem = item
         }
 
@@ -181,7 +183,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             img.isTemplate = true
             button.image = img
         }
-        button.title = ""
+        // Always leave a visible fallback while the first database refresh is
+        // still in flight or an SF Symbol cannot be created.
+        button.title = "⚡"
         button.action = #selector(statusItemClicked(_:))
         button.target = self
         button.toolTip = "Mac Usage Meter"
