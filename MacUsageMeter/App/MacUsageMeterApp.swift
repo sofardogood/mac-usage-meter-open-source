@@ -349,12 +349,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                               styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
         let viewModel = DetailViewModel(
             databaseManager: db,
-            presentingWindowProvider: { [weak window] in window }
+            presentingWindowProvider: { [weak self] in self?.detailWindow }
         )
         let view = DetailView(viewModel: viewModel)
         window.title = "Mac Usage Meter - Details"
         window.contentView = NSHostingView(rootView: view)
         window.center()
+        window.isReleasedWhenClosed = false
         detailWindow = window
 
         // ウィンドウを表示・アクティブにしてからポップオーバーを閉じる
@@ -362,7 +363,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         //  ウィンドウが前面に出ない問題が発生する)
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
-        popover?.performClose(nil)
+        window.orderFrontRegardless()
+        DispatchQueue.main.async { [weak self] in
+            self?.popover?.performClose(nil)
+        }
     }
 
     func showErrorStateWindow(stateCode: StateCode) {
