@@ -169,11 +169,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let item: NSStatusItem
         if let existingItem = statusItem {
             item = existingItem
-            item.length = 32
+            item.length = NSStatusItem.variableLength
         } else {
-            // Reserve space immediately so an asynchronous first refresh cannot
-            // leave the menu bar item with a zero-width, invisible button.
-            item = NSStatusBar.system.statusItem(withLength: 32)
+            // The fallback title below guarantees a non-zero intrinsic width
+            // while the first asynchronous refresh is still in flight.
+            item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
             statusItem = item
         }
 
