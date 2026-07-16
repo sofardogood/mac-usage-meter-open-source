@@ -25,7 +25,9 @@ enum MacUsageMeterApp {
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
-        app.setActivationPolicy(.accessory)
+        // Keep a normal application presence during startup. This provides a
+        // visible fallback when macOS delays or suppresses a status-bar item.
+        app.setActivationPolicy(.regular)
         // delegate を app.run() 終了まで保持する。
         // NSApplication.delegate は weak 参照のため、
         // withExtendedLifetime がないと ARC が早期解放する可能性がある。
@@ -143,6 +145,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task.detached(priority: .utility) {
             await collector.start()
         }
+
+        // A visible window is a reliable fallback on systems that delay menu
+        // bar item presentation during first launch.
+        showDetailWindow()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
